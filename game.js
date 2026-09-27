@@ -74,15 +74,15 @@ const MONEY_PER_DMG = 3;
 const WIN_BONUS = 300, LOSE_BONUS = 150;   // základ, rastie s číslom kola
 const ROUND_SCALE = 50;                     // +€50 víťazovi za každé ďalšie kolo
 const DIRECT_BONUS = 25, KILL_BONUS = 100, BUILD_BONUS = 20, STREAK_BONUS = 50, TREE_BONUS = 8;
-const MAX_LEVEL = 10;
+const MAX_LEVEL = 20;
 const HP_PER_LEVEL = 5, HP_PER_ARMOR = 15;
 const FUEL_START = 100, FUEL_CAP = 150, FUEL_PER_PX = 0.12, FUEL_ROUND_REFILL = 60, FUEL_BUY = 50, FUEL_BUY_COST = 60;
 
 // 10 úrovní štítov (od 1 = základný po 10 = SUPER) – farba podľa sily
 const TIER_COLORS = ['#9aa5b1', '#5fd35f', '#2fd0c8', '#4aa8ff', '#7a6bff', '#c15bff', '#ff5fb0', '#ff9a3c', '#ffd54a', '#ffffff'];
 const SHIELD_NAMES = ['Základný', 'Zosilnený', 'Kompozitný', 'Reaktívny', 'Energetický', 'Plazmový', 'Kvantový', 'Fázový', 'Titánový', 'SUPER ŠTÍT'];
-const SHIELD_UNLOCK = [3, 3, 3, 3, 3, 4, 5, 6, 7, 8];   // potrebný level veliteľa (žiadny štít pred LV3)
-const WLV_UNLOCK = [2, 4, 6];   // potrebný level veliteľa na každú ďalšiu úroveň sily zbrane
+const SHIELD_UNLOCK = [3, 4, 5, 6, 8, 10, 12, 14, 17, 20];   // potrebný level veliteľa (žiadny štít pred LV3, SUPER ŠTÍT až na maxLV)
+const WLV_UNLOCK = [2, 5, 8, 12, 16];   // potrebný level veliteľa na každú ďalšiu úroveň sily zbrane
 const SHIELDS = SHIELD_NAMES.map((name, i) => ({
   lvl: i + 1, name, cap: 20 + 15 * i, cost: Math.round(60 * Math.pow(i + 1, 1.5) / 10) * 10, unlock: SHIELD_UNLOCK[i], color: TIER_COLORS[i],
 }));
@@ -108,15 +108,23 @@ const AMMO = {
   missile:   { name: 'Rakéta',           icon: 'RK', speed: 700, dmg: 42, splash: 44,  crater: 28,  color: '#ff9a4a' },
   he:        { name: 'Trhavá HE',        icon: 'HE', speed: 620, dmg: 50, splash: 75,  crater: 50,  color: '#ff7043' },
   bounce:    { name: 'Odrazová',         icon: 'BN', speed: 600, dmg: 30, splash: 42,  crater: 24,  color: '#66e0ff', bounces: 3 },
+  ricochet:  { name: 'Rikošet',          icon: 'RC', speed: 660, dmg: 26, splash: 24,  crater: 14,  color: '#c9ff4a', bounces: 5 },
   dirt:      { name: 'Zemná bomba',      icon: 'ZB', speed: 600, dmg: 0,  splash: 0,   crater: 0,   color: '#b58a5a', dirt: 70 },
   tele:      { name: 'Teleport',         icon: 'TP', speed: 640, dmg: 0,  splash: 0,   crater: 0,   color: '#c9a7ff', tele: true },
   repair:    { name: 'Servisná súprava', icon: '✚',  speed: 0,   dmg: 0,  splash: 0,   crater: 0,   color: '#6bffb0', heal: 60, cap: 5 },
+  repairBig: { name: 'Mega oprava',      icon: '✚2', speed: 0,   dmg: 0,  splash: 0,   crater: 0,   color: '#7affc9', heal: 100, cap: 3 },
   laser:     { name: 'Laser',            icon: 'LS', speed: 0,   dmg: 22, splash: 0,   crater: 8,   color: '#ff4dff' },
-  emp:       { name: 'EMP',              icon: 'EM', speed: 640, dmg: 8,  splash: 34,  crater: 10,  color: '#8cff7a' },
+  emp:       { name: 'EMP',              icon: 'EM', speed: 640, dmg: 8,  splash: 34,  crater: 10,  color: '#8cff7a', stun: true },
+  empBig:    { name: 'EMP delo',         icon: 'E2', speed: 620, dmg: 14, splash: 55,  crater: 16,  color: '#4dffb0', stun: true, cap: 4 },
   pine:      { name: 'Ananás',           icon: 'AN', speed: 600, dmg: 16, splash: 30,  crater: 12,  color: '#ffb300', cluster: 9 },
+  chain:     { name: 'Reťazovka',        icon: 'CH', speed: 600, dmg: 10, splash: 22,  crater: 10,  color: '#ffa54a', cluster: 14, cap: 6 },
   shower:    { name: 'Sprcha',           icon: 'SP', speed: 620, dmg: 0,  splash: 0,   crater: 0,   color: '#7ad7ff', apexSplit: 5 },
+  meteor:    { name: 'Meteorický roj',   icon: 'MT', speed: 640, dmg: 0,  splash: 0,   crater: 0,   color: '#9adfff', apexSplit: 8, cap: 3 },
   volcano:   { name: 'Sopečná bomba',    icon: 'VB', speed: 600, dmg: 20, splash: 50,  crater: 38,  color: '#ff5a1f', volcano: 11, cap: 5 },
+  firestorm: { name: 'Ohnivá búrka',     icon: 'FB', speed: 590, dmg: 24, splash: 55,  crater: 42,  color: '#ff6a1f', volcano: 18, cap: 3 },
+  seismic:   { name: 'Zemetrasná nálož', icon: 'SZ', speed: 560, dmg: 34, splash: 60,  crater: 95,  color: '#8a6a3a', cap: 6 },
   airstrike: { name: 'Letecký útok',     icon: 'LU', speed: 640, dmg: 0,  splash: 0,   crater: 0,   color: '#ff4d4d', strike: 6, cap: 3 },
+  carpet:    { name: 'Koberec bômb',     icon: 'KB', speed: 640, dmg: 0,  splash: 0,   crater: 0,   color: '#ff3d3d', strike: 10, cap: 2 },
   nukeS:     { name: 'Malá atómovka',    icon: '☢1', speed: 560, dmg: 90, splash: 130, crater: 95,  color: '#fff27a', flash: 0.75, cap: 3 },
   nukeL:     { name: 'Veľká atómovka',   icon: '☢2', speed: 540, dmg: 150, splash: 210, crater: 150, color: '#ffffff', flash: 1, cap: 2 },
   // podmunícia (nedá sa kúpiť)
@@ -125,12 +133,12 @@ const AMMO = {
   lava:      { name: 'Láva',     icon: '', speed: 1, dmg: 12, splash: 28, crater: 10, color: '#ff6a2a' },
   bomb:      { name: 'Bomba',    icon: '', speed: 1, dmg: 34, splash: 48, crater: 24, color: '#ff9d4a' },
 };
-const ORDER = ['ap', 'missile', 'he', 'bounce', 'dirt', 'tele', 'repair', 'laser', 'emp', 'pine', 'shower', 'volcano', 'airstrike', 'nukeS', 'nukeL'];
+const ORDER = ['ap', 'missile', 'he', 'bounce', 'ricochet', 'dirt', 'tele', 'repair', 'repairBig', 'laser', 'emp', 'empBig', 'pine', 'chain', 'shower', 'meteor', 'volcano', 'firestorm', 'airstrike', 'carpet', 'seismic', 'nukeS', 'nukeL'];
 const capOf = id => AMMO[id].cap || 9;
 
 // ---------- úrovne zbraní (vylepšenie poškodenia za peniaze, kupuje sa v obchode) ----------
-const WLV_IDS = ['ap', 'missile', 'he', 'bounce', 'emp', 'pine', 'volcano', 'nukeS', 'nukeL', 'laser'];
-const WLV_MAX = 3, WLV_DMG_STEP = 0.18;
+const WLV_IDS = ['ap', 'missile', 'he', 'bounce', 'ricochet', 'emp', 'empBig', 'pine', 'chain', 'volcano', 'seismic', 'nukeS', 'nukeL', 'laser'];
+const WLV_MAX = 5, WLV_DMG_STEP = 0.18;
 const wlvCost = lvl => Math.round((350 + 300 * lvl) / 10) * 10;
 const wlvOf = (t, id) => (t && t.wlv && t.wlv[id]) || 0;
 const dmgMul = (t, id) => 1 + WLV_DMG_STEP * wlvOf(t, id);
@@ -184,17 +192,25 @@ const SHOP_ITEMS = [
   { id: 'missile',   label: 'Rakéta ×3',            desc: 'Silnejšia a rýchlejšia strela',                cost: 280,  qty: 3, kind: 'ammo' },
   { id: 'he',        label: 'HE ×3',                desc: 'Trhavá – plošné poškodenie, krátery',          cost: 150,  qty: 3, kind: 'ammo' },
   { id: 'bounce',    label: 'Odrazová ×3',          desc: 'Odráža sa od terénu a ocele',                  cost: 180,  qty: 3, kind: 'ammo' },
+  { id: 'ricochet',  label: 'Rikošet ×3',           desc: 'Odrazí sa až 5×, ideálna do úzkych roklín',    cost: 320,  qty: 3, kind: 'ammo', unlock: 2 },
   { id: 'dirt',      label: 'Zemná bomba ×3',       desc: 'Vytvorí kopec – kryt, alebo pohreb súpera',    cost: 200,  qty: 3, kind: 'ammo' },
   { id: 'tele',      label: 'Teleport ×2',          desc: 'Strela, ktorá ťa presunie na miesto dopadu',   cost: 350,  qty: 2, kind: 'ammo' },
   { id: 'repair',    label: 'Servisná súprava ×2',  desc: '+60 životov (minie celý ťah)',                 cost: 400,  qty: 2, kind: 'ammo' },
+  { id: 'repairBig', label: 'Mega oprava ×2',       desc: '+100 životov (minie celý ťah)',                cost: 700,  qty: 2, kind: 'ammo', unlock: 11 },
   { id: 'laser',     label: 'Laser ×2',             desc: 'Okamžitý lúč, ignoruje vietor',                cost: 250,  qty: 2, kind: 'ammo' },
   { id: 'emp',       label: 'EMP ×2',               desc: 'Súper v ďalšom ťahu nemôže jazdiť ani mieriť', cost: 200,  qty: 2, kind: 'ammo' },
-  { id: 'pine',      label: 'Ananás ×2',            desc: 'Po dopade sa rozpadne na 9 malých bômb',       cost: 450,  qty: 2, kind: 'ammo', unlock: 2 },
-  { id: 'shower',    label: 'Sprcha ×2',            desc: 'V najvyššom bode sa rozdelí na 5 striel',      cost: 600,  qty: 2, kind: 'ammo', unlock: 3 },
-  { id: 'volcano',   label: 'Sopečná bomba ×2',     desc: 'Vyvrhne fontánu lávových bômb',                cost: 750,  qty: 2, kind: 'ammo', unlock: 3 },
-  { id: 'airstrike', label: 'Letecký útok ×1',      desc: 'Po dopade zavolá 6 bômb z neba',               cost: 1300, qty: 1, kind: 'ammo', unlock: 4 },
-  { id: 'nukeS',     label: 'Malá atómovka ×1',     desc: 'Obrovský výbuch, ničí terén aj budovy',        cost: 900,  qty: 1, kind: 'ammo', unlock: 4 },
-  { id: 'nukeL',     label: 'Veľká atómovka ×1',    desc: 'Skoro celá mapa v plameňoch',                  cost: 2200, qty: 1, kind: 'ammo', unlock: 5 },
+  { id: 'empBig',    label: 'EMP delo ×2',          desc: 'Väčší dosah, aj poškodí aj ochromí súpera',    cost: 550,  qty: 2, kind: 'ammo', unlock: 7 },
+  { id: 'pine',      label: 'Ananás ×2',            desc: 'Po dopade sa rozpadne na 9 malých bômb',       cost: 450,  qty: 2, kind: 'ammo', unlock: 3 },
+  { id: 'chain',     label: 'Reťazovka ×2',         desc: 'Rozpadne sa na 14 bômb – zaplaví široké okolie', cost: 500,  qty: 2, kind: 'ammo', unlock: 4 },
+  { id: 'shower',    label: 'Sprcha ×2',            desc: 'V najvyššom bode sa rozdelí na 5 striel',      cost: 600,  qty: 2, kind: 'ammo', unlock: 5 },
+  { id: 'meteor',    label: 'Meteorický roj ×2',    desc: 'V najvyššom bode sa rozdelí na 8 striel',      cost: 1000, qty: 2, kind: 'ammo', unlock: 15 },
+  { id: 'volcano',   label: 'Sopečná bomba ×2',     desc: 'Vyvrhne fontánu lávových bômb',                cost: 750,  qty: 2, kind: 'ammo', unlock: 6 },
+  { id: 'firestorm', label: 'Ohnivá búrka ×2',      desc: 'Väčšia sopečná fontána, priame poškodenie navyše', cost: 950, qty: 2, kind: 'ammo', unlock: 13 },
+  { id: 'seismic',   label: 'Zemetrasná nálož ×2',  desc: 'Obrovský kráter, prekreslí terén pod súperom',  cost: 700,  qty: 2, kind: 'ammo', unlock: 10 },
+  { id: 'airstrike', label: 'Letecký útok ×1',      desc: 'Po dopade zavolá 6 bômb z neba',               cost: 1300, qty: 1, kind: 'ammo', unlock: 8 },
+  { id: 'carpet',    label: 'Koberec bômb ×1',      desc: 'Po dopade zavolá 10 bômb z neba',              cost: 1600, qty: 1, kind: 'ammo', unlock: 17 },
+  { id: 'nukeS',     label: 'Malá atómovka ×1',     desc: 'Obrovský výbuch, ničí terén aj budovy',        cost: 900,  qty: 1, kind: 'ammo', unlock: 9 },
+  { id: 'nukeL',     label: 'Veľká atómovka ×1',    desc: 'Skoro celá mapa v plameňoch',                  cost: 2200, qty: 1, kind: 'ammo', unlock: 12 },
   { id: 'fuel',   label: 'Palivo +' + FUEL_BUY, desc: 'Doplní nádrž (jazda spotrebúva palivo)', cost: FUEL_BUY_COST, kind: 'fuel' },
   { id: 'tank',   label: 'Väčšia nádrž', desc: '+50 kapacity paliva (max 4)', kind: 'up', lvlKey: 'fuelLvl', max: 4, costFn: l => 200 + 150 * l },
   { id: 'speed',  label: 'Pásy a motor', desc: '+20 % rýchlosť, lepšie stúpanie (max 3)', kind: 'up', lvlKey: 'speedLvl', max: 3, costFn: l => 300 + 200 * l },
@@ -380,14 +396,42 @@ const STORY_MISSIONS = [
     lose: 'Lávové polia neodpúšťajú chyby. Priprav sa lepšie a skús to znova.' },
   { title: 'Mesto v troskách', terrain: 'ruins', bots: [{ lvl: 3, name: 'Kapitán Sutina' }], rounds: 2, money: 1450,
     text: 'Zbúrané ulice plné sutín ponúkajú kryt aj nepriateľovi – priamy výstrel bude ťažký.',
-    win: 'Mesto je oslobodené. Posledná bitka o veliteľstvo sa blíži.',
+    win: 'Mesto je oslobodené. Prieskum hlási ďalšie nepriateľské oddiely medzi dunami.',
     lose: 'Sutiny ti zablokovali výstrel? Skús oblúkovejšiu dráhu alebo inú muníciu.' },
-  { title: 'Posledná bitka', terrain: 'mountains', bots: [{ lvl: 3, name: 'Maršal Železo' }, { lvl: 3, name: 'Kapitánka Oceľ' }], rounds: 2, money: 1500,
-    text: 'Dvaja velitelia naraz, každý proti každému. Toto je posledná obrana veliteľstva – daj do toho všetko.',
-    win: 'Veliteľstvo je oslobodené! Si najlepší tankový veliteľ ďaleko-ďaleko.',
+  { title: 'Búrka nad dunami', terrain: 'desert', bots: [{ lvl: 3, name: 'Plukovník Prach' }], rounds: 2, money: 1600,
+    text: 'Ďalšia jednotka sa ukrýva medzi dunami. Plukovník Prach pozná v púšti každú zákrutu a čaká na tvoju chybu.',
+    win: 'Plukovník Prach ustupuje. Podľa hlásení sa pri pobreží zoskupujú hneď dve jednotky naraz.',
+    lose: 'Púšť si ťa podala znova. Priprav lepšiu výzbroj a skús to odznova.' },
+  { title: 'Spojenecký úder', terrain: 'beach', bots: [{ lvl: 3, name: 'Kapitán Vlna' }, { lvl: 3, name: 'Poručík Príliv' }], rounds: 2, money: 1800,
+    text: 'Dvaja velitelia bránia pobrežie naraz – Kapitán Vlna útočí zblízka, Poručík Príliv strieľa na diaľku. Rozdeľ ich pozornosť.',
+    win: 'Pobrežná základňa padla. Prieskumné drony hlásia presun nepriateľa do hôr.',
+    lose: 'Dvaja súperi naraz sú tvrdý oriešok – skús si najprv doplniť štít aj muníciu.' },
+  { title: 'Obkľúčenie v horách', terrain: 'mountains', bots: [{ lvl: 3, name: 'Majorka Blesk' }, { lvl: 3, name: 'Nadporučík Hrom' }], rounds: 2, money: 1950,
+    text: 'Vysoko v horách ťa čakajú dvaja skúsení delostrelci – vietor tu búši dvojnásobnou silou a únik nie je kam.',
+    win: 'Horská pevnosť je dobytá. Zvyšky nepriateľa sa sťahujú do zamrznutých plání na sever.',
+    lose: 'Blesk a Hrom ťa zahnali do kúta. Priprav si palivo aj krytie skôr, než znova vyrazíš.' },
+  { title: 'Vánica na fronte', terrain: 'winter', bots: [{ lvl: 3, name: 'Brigádna generálka Vánica' }, { lvl: 3, name: 'Kapitán Ľadovec' }], rounds: 2, money: 2100,
+    text: 'V hustej metelici bránia dvaja velitelia zamrznutú základňu. Šmykľavý ľad sťaží jazdu obom stranám rovnako.',
+    win: 'Zamrznutý front je prelomený. Pred bránami veliteľstva sa zoskupuje posledná obrana.',
+    lose: 'Vánica ti vzala výhľad aj presnosť. Skús to znova, veliteľ.' },
+  { title: 'Obrana priesmyku', terrain: 'mountains', bots: [{ lvl: 3, name: 'Maršal Železo' }, { lvl: 3, name: 'Kapitánka Oceľ' }], rounds: 2, money: 2250,
+    text: 'Maršal Železo a Kapitánka Oceľ bránia posledný priesmyk pred samotným veliteľstvom. Toto už nie je cvičenie.',
+    win: 'Maršal Železo skladá zbrane. Priesmyk je voľný – pred tebou je už len generálny štáb nepriateľa.',
     lose: 'Aj maršali občas prehrajú svoju prvú bitku. Skús to znova, veliteľ.' },
+  { title: 'Generálny štáb', terrain: 'ruins', bots: [{ lvl: 3, name: 'Generálmajor Ruina' }, { lvl: 3, name: 'Kapitán Dym' }, { lvl: 3, name: 'Poručíčka Iskra' }], rounds: 2, money: 2500,
+    text: 'Traja velitelia naraz bránia zbúrané veliteľské centrum. Sutiny ponúkajú kryt im aj tebe – vyber si ciele múdro.',
+    win: 'Generálny štáb je rozprášený. Ostáva už len posledná obranná línia okolo kaňonu.',
+    lose: 'Traja súperi naraz sú nemilosrdní. Doplň si zásoby a skús to znova.' },
+  { title: 'Obrana kaňonu', terrain: 'canyon', bots: [{ lvl: 3, name: 'Plukovník Cyklón' }, { lvl: 3, name: 'Majorka Ozvena' }, { lvl: 3, name: 'Kapitán Balvan' }], rounds: 2, money: 2750,
+    text: 'Posledná obranná línia sa ukrýva v úzkej rokline. Vietor tu fúka ako z tunela a súperi majú kryt za každým balvanom.',
+    win: 'Kaňon je dobytý. Zostáva už len samotná sopka, kde sa ukrýva najvyššie velenie.',
+    lose: 'Ozvena kaňonu ti sťažila mierenie. Priprav si presnejšiu muníciu a skús to znova.' },
+  { title: 'Posledná bašta', terrain: 'volcano', bots: [{ lvl: 3, name: 'Maršal Popolec' }, { lvl: 3, name: 'Generálka Magma' }, { lvl: 3, name: 'Najvyšší veliteľ Vulkán' }], rounds: 3, money: 3000,
+    text: 'Toto je posledná bašta nepriateľa, hlboko v sopke. Traja najvyšší velitelia naraz – daj do toho úplne všetko, veliteľ.',
+    win: 'Posledná bašta padla. Veliteľstvo je oslobodené! Si najlepší tankový veliteľ ďaleko-ďaleko.',
+    lose: 'Aj najvyšší velitelia sa dajú poraziť – nabudúce to dokážeš, veliteľ.' },
 ];
-const STORY_KEY = 'ironDuelStory_v2';   // v2: zmenilo sa poradie/počet misií, staré indexy by sa nezhodovali
+const STORY_KEY = 'ironDuelStory_v3';   // v3: pribudlo 7 nových misií (18 spolu), staré indexy by sa nezhodovali
 let story = { active: false, idx: null, progress: { unlocked: 1, done: [] } };
 try {
   const v = JSON.parse(localStorage.getItem(STORY_KEY));
@@ -931,7 +975,7 @@ function botPlan(t) {
   const lvl = t.bot, dist = Math.abs(target.x - t.x), tx = target.x, ty = target.y - 14;
   let ammo = 'ap';
   if (t.hp < maxHp(t) * 0.35 && t.ammo.repair > 0) return { ammo: 'repair', ang: t.ang, power: t.power };
-  const pref = ['nukeL', 'nukeS', 'airstrike', 'volcano', 'pine', 'shower', 'he', 'missile', 'laser', 'bounce', 'emp', 'ap'];
+  const pref = ['nukeL', 'nukeS', 'carpet', 'firestorm', 'airstrike', 'volcano', 'meteor', 'seismic', 'pine', 'chain', 'shower', 'empBig', 'he', 'missile', 'ricochet', 'laser', 'bounce', 'emp', 'ap'];
   const cand = pref.filter(id => t.ammo[id] > 0 && (!id.startsWith('nuke') || dist > AMMO[id].splash * 0.85 + 60));
   if (cand.length) ammo = Math.random() < [0.45, 0.75, 0.95][lvl - 1] ? cand[0] : cand[Math.floor(Math.random() * cand.length)];
   const jitter = sd => (Math.random() + Math.random() - 1) * sd * 1.6;
@@ -969,7 +1013,7 @@ function botShop(t) {
     const sh = SHIELDS[k - 1];
     if (t.level >= sh.unlock && t.money - sh.cost >= 150 && t.shields[k - 1] < 1) { t.money -= sh.cost; t.shields[k - 1]++; break; }
   }
-  for (let pass = 0; pass < 3; pass++) ['nukeL', 'nukeS', 'airstrike', 'volcano', 'pine', 'shower', 'he', 'missile', 'laser', 'emp', 'bounce', 'repair'].forEach(id => {
+  for (let pass = 0; pass < 3; pass++) ['nukeL', 'nukeS', 'carpet', 'firestorm', 'airstrike', 'volcano', 'meteor', 'seismic', 'pine', 'chain', 'shower', 'empBig', 'he', 'missile', 'ricochet', 'laser', 'emp', 'bounce', 'repair', 'repairBig'].forEach(id => {
     const it = SHOP_ITEMS.find(i => i.id === id);
     if ((!it.unlock || t.level >= it.unlock) && t.money >= it.cost + 100 && t.ammo[id] < 2 * it.qty + 1 && Math.random() < 0.55) { t.money -= it.cost; t.ammo[id] = Math.min(capOf(id), t.ammo[id] + it.qty); }
   });
@@ -1191,7 +1235,7 @@ function explosion(x, y, type, ownerId) {
     const d = Math.hypot(x - t.x, y - (t.y - 14));
     if (d < a.splash + 18) {
       const f = 1 - clamp((d - 18) / a.splash, 0, 1) * 0.65;
-      if (type === 'emp') { t.emp = 1; floatText(t.x, t.y - 50, 'EMP!', '#8cff7a'); }
+      if (a.stun) { t.emp = 1; floatText(t.x, t.y - 50, 'EMP!', '#8cff7a'); }
       damage(t, dmg * f, ownerId, t.x, t.y - 20, f >= 0.9);
     }
   });
@@ -1316,7 +1360,7 @@ function updateProjectiles(dt) {
       }
       if (p.y > H + 60 || p.life > 8) { p.gone = true; break; }
       if (p.x < 0 || p.x > W) {
-        if (p.type === 'bounce' && p.bounces > 0) { p.vx = -p.vx * 0.8; p.x = clamp(p.x, 1, W - 1); p.bounces--; bounceFx(p); continue; }
+        if (p.bounces > 0) { p.vx = -p.vx * 0.8; p.x = clamp(p.x, 1, W - 1); p.bounces--; bounceFx(p); continue; }
         p.gone = true; break;
       }
       // tanky
@@ -1327,7 +1371,7 @@ function updateProjectiles(dt) {
       // prekážky
       for (const o of obstacles) {
         if (p.x >= o.x && p.x <= o.x + o.w && p.y >= obTop(o) && p.y <= o.base) {
-          if (o.steel && p.type === 'bounce' && p.bounces > 0) {
+          if (o.steel && p.bounces > 0) {
             const px = p.x - sdt * 0 - p.vx * sdt, fromSide = px < o.x || px > o.x + o.w;
             if (fromSide) { p.vx = -p.vx * 0.8; p.x += p.vx * sdt * 2; } else { p.vy = -p.vy * 0.8; p.y += p.vy * sdt * 2; }
             p.bounces--; bounceFx(p);
@@ -1342,7 +1386,7 @@ function updateProjectiles(dt) {
       // terén
       const g = gy(p.x);
       if (p.y >= g) {
-        if (p.type === 'bounce' && p.bounces > 0) {
+        if (p.bounces > 0) {
           const nx0 = gy(p.x - 3) - gy(p.x + 3), ny0 = 6;           // normála k terénu (smeruje nahor)
           const len = Math.hypot(nx0, ny0), nx = nx0 / len, ny = -ny0 / len;
           const dot = p.vx * nx + p.vy * ny;

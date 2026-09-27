@@ -92,7 +92,8 @@
   .missionPin .num{font-size:clamp(11px,2vw,15px);line-height:1}
   .missionPin .ic{font-size:clamp(13px,2.4vw,18px);line-height:1;margin-top:1px}
   .missionPin .chk{position:absolute;top:-6px;right:-6px;background:#5fd35f;color:#0a1030;border-radius:50%;width:18px;height:18px;font-size:11px;display:flex;align-items:center;justify-content:center;border:2px solid #080b16}
-  .pinLabel{position:absolute;transform:translate(-50%,0);white-space:nowrap;font-size:clamp(9px,1.6vw,12px);font-weight:700;color:#fff;text-shadow:0 2px 6px #000;pointer-events:none;max-width:120px;white-space:normal;text-align:center}
+  .pinLabel{position:absolute;transform:translate(-50%,0);white-space:normal;font-size:clamp(9px,1.6vw,12px);font-weight:700;color:#fff;text-shadow:0 2px 6px #000;pointer-events:none;max-width:110px;text-align:center;opacity:0;transition:opacity .15s;background:rgba(10,14,26,.85);border-radius:6px;padding:2px 5px}
+  .missionPin:hover + .pinLabel{opacity:1}
   .storyDetail{min-height:70px;background:rgba(255,255,255,.04);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:13px;color:var(--muted)}
   .storyDetail b{color:#fff}
   @media (max-width:560px){ .pinLabel{display:none} }
