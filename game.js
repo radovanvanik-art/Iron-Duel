@@ -488,7 +488,10 @@ const net = { active: false, code: null, myIdx: 0, hostName: '', hostColor: '', 
 async function ensureDb() {
   if (dbCap || dbCapTried) return dbCap;
   dbCapTried = true;
-  try { if (window.claude && window.claude.use) dbCap = await window.claude.use('db'); } catch (_) { dbCap = null; }
+  try {
+    if (window.__firestoreDb) { dbCap = window.__firestoreDb; }   // vlastný web hosting (Firebase)
+    else if (window.claude && window.claude.use) { dbCap = await window.claude.use('db'); }   // Claude Artifact
+  } catch (_) { dbCap = null; }
   return dbCap;
 }
 ensureDb();

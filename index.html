@@ -406,4 +406,19 @@
   </div>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<script>
+  try {
+    firebase.initializeApp({
+      apiKey: "AIzaSyA7jVs60S9MwtaWGPqWTcgeiWnmUmrk1Ws",
+      authDomain: "iron-duel.firebaseapp.com",
+      projectId: "iron-duel",
+      storageBucket: "iron-duel.firebasestorage.app",
+      messagingSenderId: "500419556576",
+      appId: "1:500419556576:web:cc36baeee17e06ee49cc85",
+    });
+    window.__firestoreDb = firebase.firestore();
+  } catch (_) { /* mimo web hostingu (napr. Claude Artifact) - použije sa záložné window.claude db */ }
+</script>
 <script src="game.js"></script>
