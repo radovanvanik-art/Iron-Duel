@@ -308,11 +308,19 @@ const NICK_RE = /^[\p{L}\p{N}][\p{L}\p{N} _.\-]{1,13}$/u;
 let profiles = {};
 try { const v = JSON.parse(localStorage.getItem(PROF_KEY)); if (v && typeof v === 'object' && !Array.isArray(v)) profiles = v; } catch (_) {}
 const nickKey = str => 'n_' + str.trim().toLowerCase();      // predpona chráni pred kľúčmi ako __proto__
-const newProfile = (nick, color) => ({ nick, color, created: Date.now(), matches: 0, wins: 0, rounds: 0, kills: 0, bestLevel: 1, last: 0 });
+const newProfile = (nick, color) => ({ nick, color, created: Date.now(), matches: 0, wins: 0, rounds: 0, kills: 0, bestLevel: 1, level: 1, xp: 0, last: 0 });
 function saveProfiles() { try { localStorage.setItem(PROF_KEY, JSON.stringify(profiles)); } catch (_) {} }
 const getProfile = nick => (nick && Object.prototype.hasOwnProperty.call(profiles, nickKey(nick))) ? profiles[nickKey(nick)] : null;
 const statsLine = p => 'Zápasy ' + p.matches + ' · Výhry ' + p.wins + (p.matches ? ' (' + Math.round(100 * p.wins / p.matches) + ' %)' : '') +
-  ' · Kolá ' + p.rounds + ' · Zničené tanky ' + p.kills + ' · Najvyšší LV ' + p.bestLevel;
+  ' · Kolá ' + p.rounds + ' · Zničené tanky ' + p.kills + ' · Veliteľská hodnosť LV ' + (p.level || 1);
+// veliteľská hodnosť (level/XP) sa ukladá na profil podľa prezývky a prenáša sa do KAŽDÉHO ďalšieho zápasu (kampaň, multiplayer aj proti počítaču) – rastie hraním, nezačína sa vždy odznova
+function syncProfileLevel(t) {
+  if (!t.nick) return;
+  const key = nickKey(t.nick);
+  const p = Object.prototype.hasOwnProperty.call(profiles, key) ? profiles[key] : (profiles[key] = newProfile(t.nick, t.color));
+  p.level = t.level; p.xp = t.xp; p.bestLevel = Math.max(p.bestLevel || 1, t.level); p.last = Date.now();
+  saveProfiles();
+}
 function recordStats(winner) {
   const done = [];
   tanks.forEach(t => {
@@ -477,8 +485,18 @@ function storyMissionSub(m) {
   return B.icon + ' ' + B.name + ' · ' + (m.bots.length > 1 ? ('Boss · ' + m.bots.length + ' súperi') : ('PC ' + ['', 'ľahký', 'stredný', 'ťažký'][m.bots[0].lvl])) + ' · do ' + m.rounds + ' ' + (m.rounds === 1 ? 'víťazstva' : 'víťazstiev');
 }
 function renderStoryList() {
-  const N = STORY_MISSIONS.length, VW = 1000, VH = 280;
-  const pts = STORY_MISSIONS.map((m, i) => ({ x: 70 + i * ((VW - 140) / (N - 1)), y: i % 2 === 0 ? VH - 75 : 95, m, i }));
+  const N = STORY_MISSIONS.length;
+  const cols = Math.min(4, N), rows = Math.ceil(N / cols);
+  const VW = 1000, marginX = 110, rowH = 230, topPad = 130, waveAmp = 60;
+  const VH = topPad * 2 + (rows - 1) * rowH;
+  const pts = STORY_MISSIONS.map((m, i) => {   // hadovitá mriežka (viac riadkov) namiesto jedného stiesneného pásu
+    const row = Math.floor(i / cols), posInRow = i - row * cols, itemsInRow = Math.min(cols, N - row * cols);
+    const offset = (cols - itemsInRow) / 2;   // vycentruje neúplný posledný riadok
+    const colIdx = row % 2 === 0 ? offset + posInRow : cols - 1 - offset - posInRow;
+    const x = cols > 1 ? marginX + colIdx * (VW - 2 * marginX) / (cols - 1) : VW / 2;
+    const y = topPad + row * rowH + (Math.round(colIdx) % 2 === 0 ? -waveAmp : waveAmp);
+    return { x, y, m, i };
+  });
   const pathD = catmullRomPath(pts);
   const zones = pts.map(p => {
     const B = BIOMES[p.m.terrain];
@@ -486,7 +504,7 @@ function renderStoryList() {
       '<stop offset="0" stop-color="' + B.edge + '" stop-opacity=".35"/><stop offset="1" stop-color="' + B.edge + '" stop-opacity="0"/></radialGradient>';
   }).join('');
   const glows = pts.map(p => '<circle cx="' + p.x + '" cy="' + p.y + '" r="110" fill="url(#zg' + p.i + ')"/>').join('');
-  const svg = '<svg viewBox="0 0 ' + VW + ' ' + VH + '" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">' +
+  const svg = '<svg viewBox="0 0 ' + VW + ' ' + VH + '" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">' +
     '<defs>' + zones + '</defs>' + glows +
     '<path d="' + pathD + '" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="7" stroke-linecap="round"/>' +
     '<path d="' + pathD + '" fill="none" stroke="rgba(255,213,74,.55)" stroke-width="3" stroke-linecap="round" stroke-dasharray="2 14"/>' +
@@ -745,11 +763,12 @@ function noise(dur, vol = 0.15, cutoff = 900) {
 // ---------- tanky ----------
 function makeTank(id, cfg) {
   cfg = cfg || setup.players[id];
+  const prof = cfg.nick ? getProfile(cfg.nick) : null;   // prihlásený hráč pokračuje na svojej uloženej veliteľskej hodnosti (level/XP)
   return {
     id, color: cfg.color, name: cfg.name, nick: cfg.nick || null, kills: 0, artPivotH: tankArtPivotH(cfg.color),
     money: START_MONEY, ammo: Object.fromEntries(ORDER.map(k => [k, k === 'ap' ? Infinity : 0])), bot: cfg.bot | 0, botSt: null, hudRects: [],
     speedLvl: 0, armorLvl: 0, fuelLvl: 0, wlv: Object.fromEntries(WLV_IDS.map(k => [k, 0])), wins: 0, streak: 0,
-    level: 1, xp: 0, shields: new Array(10).fill(0), shT: 0, shieldMax: 0,
+    level: prof ? clampInt(prof.level, 1, MAX_LEVEL, 1) : 1, xp: prof ? Math.max(0, +prof.xp || 0) : 0, shields: new Array(10).fill(0), shT: 0, shieldMax: 0,
     fuel: FUEL_START, noFuelT: 0, rep: {}, repLast: {},
     x: 0, y: 0, vx: 0, power: 100, tilt: 0, face: 1, ang: 50,
     hp: BASE_HP, shield: 0, sel: 'ap', cd: 0, emp: 0, dead: false, prevAmmoBtn: '',
@@ -773,6 +792,7 @@ function addXp(t, n) {
     tone(500, 1400, 0.4, 'triangle', 0.08);
   }
   if (t.level >= MAX_LEVEL) t.xp = 0;
+  syncProfileLevel(t);   // veliteľská hodnosť sa hneď ukladá na profil, nech sa neresetuje pri ďalšom zápase (kampaň/multiplayer/vs. počítač)
 }
 
 function placeTank(t, x) {
@@ -1073,6 +1093,7 @@ function afterRoundEnd() {
     if (story.active) {
       const m = STORY_MISSIONS[story.idx], won = w === tanks[0];
       if (won) { story.progress.unlocked = Math.max(story.progress.unlocked, story.idx + 2); story.progress.done[story.idx] = true; saveStoryProgress(); }
+      recordStats(w);   // misie v kampani sa teraz tiež počítajú do štatistík profilu (zápasy/výhry/kolá)
       $('endTitle').textContent = won ? 'Misia splnená!' : 'Misia zlyhala';
       $('endTitle').style.color = won ? '#5fd35f' : '#e5484d';
       $('endSub').innerHTML = esc(won ? m.win : m.lose);
@@ -2193,7 +2214,8 @@ function enterHome() {
   hide('login'); refreshContinue(); renderHome(); show('home');
 }
 function renderHome() {
-  $('homeGreet').textContent = setup.players[0].nick ? ('Prihlásený ako ' + setup.players[0].nick) : '';
+  const nick = setup.players[0].nick, prof = nick ? getProfile(nick) : null;
+  $('homeGreet').textContent = nick ? ('Prihlásený ako ' + nick + (prof ? ' · veliteľská hodnosť LV ' + (prof.level || 1) : '')) : '';
   const sv = readSave();
   $('homeContBtn').style.display = sv ? '' : 'none';
   if (sv) $('homeContBtn').textContent = '▶ Pokračovať: kolo ' + sv.round + ' · ' + sv.players.length + ' hráči';
