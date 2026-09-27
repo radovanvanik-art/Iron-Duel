@@ -2273,7 +2273,6 @@ $('padBtn').addEventListener('click', () => {
 if (!window.matchMedia('(pointer: coarse)').matches) { document.body.classList.add('nopad'); $('padBtn').textContent = 'Dotykové ovládanie: vyp'; }
 
 // dotykové ovládače
-const BUTTONS = [['left', '◀'], ['right', '▶'], ['fire', 'STRELA'], ['up', '▲'], ['down', '▼'], ['ammo', 'AP'], ['pdown', 'SILA−'], ['pinfo', '100%'], ['pup', 'SILA+']];
 const padButtons = [], padEls = [];
 function buildPads() {
   const n = tanks.length;
@@ -2289,16 +2288,40 @@ function buildPads() {
     const pad = document.createElement('div'); pad.className = 'pad';
     pad.style.setProperty('--pc', t.color); pad.style.setProperty('--pn', sn);
     pad.dataset.si = si; pad.dataset.sn = sn;
-    BUTTONS.forEach(([a, label]) => {
-      const b = document.createElement('button'); b.textContent = label; b.className = a; padButtons[p][a] = b;
-      if (a === 'pinfo') { b.disabled = true; pad.appendChild(b); return; }
+
+    const mkBtn = (a, label, cls) => {
+      const b = document.createElement('button'); b.textContent = label; b.className = a + (cls ? ' ' + cls : ''); padButtons[p][a] = b;
       const down = e => { e.preventDefault(); initAudio(); try { b.setPointerCapture(e.pointerId); } catch (_) {} held[p][a] = true; b.classList.add('on'); if (a === 'ammo') cycleAmmo(tanks[p]); if (a === 'fire') tryFire(p); };
       const up = () => { held[p][a] = false; b.classList.remove('on'); };
       b.addEventListener('pointerdown', down);
       ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => b.addEventListener(ev, up));
       b.addEventListener('contextmenu', e => e.preventDefault());
-      pad.appendChild(b);
+      return b;
+    };
+
+    const row = document.createElement('div'); row.className = 'padRow';
+    const move = document.createElement('div'); move.className = 'padGroup padMove';
+    move.append(mkBtn('left', '◀'), mkBtn('right', '▶'));
+    const center = document.createElement('div'); center.className = 'padGroup padCenter';
+    center.append(mkBtn('fire', 'STRELA', 'fireBtn'), mkBtn('ammo', 'AP', 'ammoBtn'));
+    const aim = document.createElement('div'); aim.className = 'padGroup padAim';
+    aim.append(mkBtn('up', '▲'), mkBtn('down', '▼'));
+    row.append(move, center, aim);
+
+    const power = document.createElement('div'); power.className = 'padPower';
+    const slider = document.createElement('input');
+    slider.type = 'range'; slider.className = 'powerSlider'; slider.min = POWER_MIN; slider.max = 100; slider.step = 1; slider.value = 100;
+    slider.addEventListener('pointerdown', () => initAudio());
+    slider.addEventListener('input', () => {
+      const tt = tanks[p];
+      if (!(state === 'play' && tt.id === turnIdx && turnPhase === 'aim' && !tt.stun)) { slider.value = Math.round(tt.power); return; }
+      tt.power = clamp(+slider.value, POWER_MIN, 100);
     });
+    padButtons[p].powerSlider = slider;
+    const info = document.createElement('span'); info.className = 'pinfo'; info.textContent = '100%'; padButtons[p].pinfo = info;
+    power.append(slider, info);
+
+    pad.append(row, power);
     padEls[p] = pad; document.body.appendChild(pad);
   });
   positionPads();
@@ -2317,7 +2340,10 @@ function updatePadLabels() {
   tanks.forEach((t, p) => {
     const txt = AMMO[t.sel].icon + (t.ammo[t.sel] === Infinity ? '' : ' ×' + t.ammo[t.sel]);
     const pwTxt = Math.round(t.power) + '%';
-    if (padButtons[p] && padButtons[p].pinfo && t.prevPw !== pwTxt) { t.prevPw = pwTxt; padButtons[p].pinfo.textContent = pwTxt; }
+    if (padButtons[p] && padButtons[p].pinfo && t.prevPw !== pwTxt) {
+      t.prevPw = pwTxt; padButtons[p].pinfo.textContent = pwTxt;
+      if (padButtons[p].powerSlider && document.activeElement !== padButtons[p].powerSlider) padButtons[p].powerSlider.value = Math.round(t.power);
+    }
     const idle = !(state === 'play' && p === turnIdx && turnPhase === 'aim' && !t.dead);
     if (padEls[p] && t.prevIdle !== idle) { t.prevIdle = idle; padEls[p].classList.toggle('idle', idle); }
     if (padButtons[p] && t.prevAmmoBtn !== txt) { t.prevAmmoBtn = txt; padButtons[p].ammo.textContent = txt; }
