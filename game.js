@@ -1366,7 +1366,13 @@ function updateCamera(dt) {
   let tx = W / 2, ty = H / 2, tz = 1;
   if (camZoomOn && state === 'play') {
     const t = tanks[turnIdx];
-    if (turnPhase === 'aim' && t && !t.dead) { tx = t.x; ty = t.y - 40; tz = CAM_ZOOM; }
+    if (turnPhase === 'aim' && t && !t.dead) {
+      const alive = tanks.filter(x => !x.dead);   // priblíženie tak, aby zostali v zábere všetci živí hráči
+      const minX = Math.min(...alive.map(x => x.x)), maxX = Math.max(...alive.map(x => x.x));
+      const spread = Math.max(200, maxX - minX);
+      tx = (minX + maxX) / 2; ty = alive.reduce((s, x) => s + x.y, 0) / alive.length - 40;
+      tz = clamp(W / (spread + 300), 0.85, CAM_ZOOM);
+    }
     else if (projectiles.length) {
       let sx = 0, sy = 0; projectiles.forEach(p => { sx += p.x; sy += p.y; });
       tx = sx / projectiles.length; ty = sy / projectiles.length; tz = CAM_ZOOM_FLIGHT;
