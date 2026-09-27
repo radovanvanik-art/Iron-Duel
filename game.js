@@ -386,7 +386,7 @@ const STORY_MISSIONS = [
     win: 'Veliteľstvo je oslobodené! Si najlepší tankový veliteľ ďaleko-ďaleko.',
     lose: 'Aj maršali občas prehrajú svoju prvú bitku. Skús to znova, veliteľ.' },
 ];
-const STORY_KEY = 'ironDuelStory_v1';
+const STORY_KEY = 'ironDuelStory_v2';   // v2: zmenilo sa poradie/počet misií, staré indexy by sa nezhodovali
 let story = { active: false, idx: null, progress: { unlocked: 1, done: [] } };
 try {
   const v = JSON.parse(localStorage.getItem(STORY_KEY));
