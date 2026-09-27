@@ -81,7 +81,8 @@ const FUEL_START = 100, FUEL_CAP = 150, FUEL_PER_PX = 0.12, FUEL_ROUND_REFILL = 
 // 10 úrovní štítov (od 1 = základný po 10 = SUPER) – farba podľa sily
 const TIER_COLORS = ['#9aa5b1', '#5fd35f', '#2fd0c8', '#4aa8ff', '#7a6bff', '#c15bff', '#ff5fb0', '#ff9a3c', '#ffd54a', '#ffffff'];
 const SHIELD_NAMES = ['Základný', 'Zosilnený', 'Kompozitný', 'Reaktívny', 'Energetický', 'Plazmový', 'Kvantový', 'Fázový', 'Titánový', 'SUPER ŠTÍT'];
-const SHIELD_UNLOCK = [1, 1, 2, 3, 3, 4, 5, 6, 7, 8];   // potrebný level veliteľa
+const SHIELD_UNLOCK = [3, 3, 3, 3, 3, 4, 5, 6, 7, 8];   // potrebný level veliteľa (žiadny štít pred LV3)
+const WLV_UNLOCK = [2, 4, 6];   // potrebný level veliteľa na každú ďalšiu úroveň sily zbrane
 const SHIELDS = SHIELD_NAMES.map((name, i) => ({
   lvl: i + 1, name, cap: 20 + 15 * i, cost: Math.round(60 * Math.pow(i + 1, 1.5) / 10) * 10, unlock: SHIELD_UNLOCK[i], color: TIER_COLORS[i],
 }));
@@ -188,12 +189,12 @@ const SHOP_ITEMS = [
   { id: 'repair',    label: 'Servisná súprava ×2',  desc: '+60 životov (minie celý ťah)',                 cost: 400,  qty: 2, kind: 'ammo' },
   { id: 'laser',     label: 'Laser ×2',             desc: 'Okamžitý lúč, ignoruje vietor',                cost: 250,  qty: 2, kind: 'ammo' },
   { id: 'emp',       label: 'EMP ×2',               desc: 'Súper v ďalšom ťahu nemôže jazdiť ani mieriť', cost: 200,  qty: 2, kind: 'ammo' },
-  { id: 'pine',      label: 'Ananás ×2',            desc: 'Po dopade sa rozpadne na 9 malých bômb',       cost: 450,  qty: 2, kind: 'ammo' },
-  { id: 'shower',    label: 'Sprcha ×2',            desc: 'V najvyššom bode sa rozdelí na 5 striel',      cost: 600,  qty: 2, kind: 'ammo' },
-  { id: 'volcano',   label: 'Sopečná bomba ×2',     desc: 'Vyvrhne fontánu lávových bômb',                cost: 750,  qty: 2, kind: 'ammo' },
-  { id: 'airstrike', label: 'Letecký útok ×1',      desc: 'Po dopade zavolá 6 bômb z neba',               cost: 1300, qty: 1, kind: 'ammo' },
-  { id: 'nukeS',     label: 'Malá atómovka ×1',     desc: 'Obrovský výbuch, ničí terén aj budovy',        cost: 900,  qty: 1, kind: 'ammo' },
-  { id: 'nukeL',     label: 'Veľká atómovka ×1',    desc: 'Skoro celá mapa v plameňoch',                  cost: 2200, qty: 1, kind: 'ammo' },
+  { id: 'pine',      label: 'Ananás ×2',            desc: 'Po dopade sa rozpadne na 9 malých bômb',       cost: 450,  qty: 2, kind: 'ammo', unlock: 2 },
+  { id: 'shower',    label: 'Sprcha ×2',            desc: 'V najvyššom bode sa rozdelí na 5 striel',      cost: 600,  qty: 2, kind: 'ammo', unlock: 3 },
+  { id: 'volcano',   label: 'Sopečná bomba ×2',     desc: 'Vyvrhne fontánu lávových bômb',                cost: 750,  qty: 2, kind: 'ammo', unlock: 3 },
+  { id: 'airstrike', label: 'Letecký útok ×1',      desc: 'Po dopade zavolá 6 bômb z neba',               cost: 1300, qty: 1, kind: 'ammo', unlock: 4 },
+  { id: 'nukeS',     label: 'Malá atómovka ×1',     desc: 'Obrovský výbuch, ničí terén aj budovy',        cost: 900,  qty: 1, kind: 'ammo', unlock: 4 },
+  { id: 'nukeL',     label: 'Veľká atómovka ×1',    desc: 'Skoro celá mapa v plameňoch',                  cost: 2200, qty: 1, kind: 'ammo', unlock: 5 },
   { id: 'fuel',   label: 'Palivo +' + FUEL_BUY, desc: 'Doplní nádrž (jazda spotrebúva palivo)', cost: FUEL_BUY_COST, kind: 'fuel' },
   { id: 'tank',   label: 'Väčšia nádrž', desc: '+50 kapacity paliva (max 4)', kind: 'up', lvlKey: 'fuelLvl', max: 4, costFn: l => 200 + 150 * l },
   { id: 'speed',  label: 'Pásy a motor', desc: '+20 % rýchlosť, lepšie stúpanie (max 3)', kind: 'up', lvlKey: 'speedLvl', max: 3, costFn: l => 300 + 200 * l },
@@ -970,12 +971,12 @@ function botShop(t) {
   }
   for (let pass = 0; pass < 3; pass++) ['nukeL', 'nukeS', 'airstrike', 'volcano', 'pine', 'shower', 'he', 'missile', 'laser', 'emp', 'bounce', 'repair'].forEach(id => {
     const it = SHOP_ITEMS.find(i => i.id === id);
-    if (t.money >= it.cost + 100 && t.ammo[id] < 2 * it.qty + 1 && Math.random() < 0.55) { t.money -= it.cost; t.ammo[id] = Math.min(capOf(id), t.ammo[id] + it.qty); }
+    if ((!it.unlock || t.level >= it.unlock) && t.money >= it.cost + 100 && t.ammo[id] < 2 * it.qty + 1 && Math.random() < 0.55) { t.money -= it.cost; t.ammo[id] = Math.min(capOf(id), t.ammo[id] + it.qty); }
   });
   if (t.armorLvl < 6 && t.money >= 150 + 120 * t.armorLvl + 400) { t.money -= 150 + 120 * t.armorLvl; t.armorLvl++; }
   WLV_IDS.forEach(id => {
     const lvl = wlvOf(t, id), cost = wlvCost(lvl);
-    if (lvl < WLV_MAX && t.money >= cost + 200 && Math.random() < 0.3) { t.money -= cost; t.wlv = t.wlv || {}; t.wlv[id] = lvl + 1; }
+    if (lvl < WLV_MAX && t.level >= WLV_UNLOCK[lvl] && t.money >= cost + 200 && Math.random() < 0.3) { t.money -= cost; t.wlv = t.wlv || {}; t.wlv[id] = lvl + 1; }
   });
 }
 function tryFire(p) { if (tanks[p] && !tanks[p].bot) fire(tanks[p]); }
@@ -2014,7 +2015,7 @@ function shopRows(t) {
     const a = AMMO[k];
     if (k === 'ap') return { id: 'ap', ic: icon('AP', a.color), name: a.name, sub: 'základná, neobmedzená', price: 0, pack: '–', owned: '∞', fixed: true };
     const it = SHOP_ITEMS.find(i => i.id === k);
-    return { id: k, ic: icon(a.icon, a.color), name: a.name, sub: it.desc, price: it.cost, pack: it.qty, owned: t.ammo[k], off: t.ammo[k] >= capOf(k) };
+    return { id: k, ic: icon(a.icon, a.color), name: a.name, sub: it.desc, price: it.cost, pack: it.qty, owned: t.ammo[k], off: t.ammo[k] >= capOf(k), lock: it.unlock && t.level < it.unlock ? it.unlock : 0 };
   });
   const gear = SHOP_ITEMS.filter(i => i.kind !== 'ammo').map(it => {
     const st = itemState(t, it);
@@ -2031,7 +2032,7 @@ function shopRows(t) {
   const wlevels = WLV_IDS.map(id => {
     const a = AMMO[id], lvl = wlvOf(t, id);
     return { id: 'wl_' + id, ic: icon(a.icon, a.color), name: 'LV zbrane: ' + a.name, sub: '+' + Math.round(WLV_DMG_STEP * 100) + ' % poškodenia/úroveň (teraz +' + Math.round(WLV_DMG_STEP * 100 * lvl) + ' %)',
-      price: wlvCost(lvl), pack: 1, owned: lvl, ownedMax: WLV_MAX, off: lvl >= WLV_MAX };
+      price: wlvCost(lvl), pack: 1, owned: lvl, ownedMax: WLV_MAX, off: lvl >= WLV_MAX, lock: lvl < WLV_MAX && t.level < WLV_UNLOCK[lvl] ? WLV_UNLOCK[lvl] : 0 };
   });
   return { weapons, gear, shields, wlevels };
 }
@@ -2071,7 +2072,7 @@ function buy(p, id) {
   if (t.bot) return;
   if (id.startsWith('wl_')) {
     const wid = id.slice(3), lvl = wlvOf(t, wid), cost = wlvCost(lvl);
-    if (lvl >= WLV_MAX || t.money < cost) return;
+    if (lvl >= WLV_MAX || t.level < WLV_UNLOCK[lvl] || t.money < cost) return;
     t.money -= cost; t.wlv = t.wlv || {}; t.wlv[wid] = lvl + 1;
     tone(700 + lvl * 90, 1100 + lvl * 100, 0.1, 'triangle', 0.07);
     renderShop(); return;
@@ -2085,6 +2086,7 @@ function buy(p, id) {
   }
   const it = SHOP_ITEMS.find(i => i.id === id);
   if (!it) return;
+  if (it.unlock && t.level < it.unlock) return;
   const c = itemCost(t, it), st = itemState(t, it);
   if (st.off || t.money < c) return;
   t.money -= c;
