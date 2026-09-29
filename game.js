@@ -2295,7 +2295,7 @@ function renderOnlineLobby() {   // rovnaká obrazovka ako lokálne "Hrať teraz
     (isHost
       ? '<button class="btn" id="onlineStartBtn"' + (n < 2 ? ' disabled' : '') + '>▶ ŠTART zápasu (' + n + '/' + net.maxN + ')</button>'
       : '<p>Čaká sa, kým hostiteľ spustí zápas… (' + n + '/' + net.maxN + ' pripojených)</p>');
-  if (isHost) $('onlineStartBtn').addEventListener('click', () => { goFullscreen(); startOnlineMatch(); });
+  if (isHost) $('onlineStartBtn').addEventListener('click', () => { goFullscreen(); hide('online'); hide('menu'); startOnlineMatch(); });
   $('setupRows').innerHTML = net.players.map((p, i) => {
     const filled = p && p.name, pc = filled ? p.color : '#555';
     return '<div class="prow" style="--pc:' + pc + '"><span class="mt"><i></i></span>' +
