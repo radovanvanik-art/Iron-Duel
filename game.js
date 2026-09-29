@@ -1949,8 +1949,9 @@ function drawParticles() {
 function drawAmmoMenu(hw, hgap) {   // všetky zbrane hráča s celými názvami
   if (ammoMenu.t <= 0) return;
   const t = tanks[ammoMenu.id]; if (!t || t.bot) return;
-  const list = ORDER.filter(k => t.ammo[k] > 0), rowH = 22, cols = list.length > 8 ? 2 : 1, per = Math.ceil(list.length / cols);
-  const w = cols === 1 ? Math.max(hw, 270) : 520, h = per * rowH + 32, cw = (w - 12) / cols;
+  const list = ORDER.filter(k => t.ammo[k] > 0), rowH = 22;
+  const cols = list.length > 16 ? 3 : list.length > 8 ? 2 : 1, per = Math.ceil(list.length / cols);
+  const w = cols === 1 ? Math.max(hw, 270) : cols === 2 ? 520 : 740, h = per * rowH + 32, cw = (w - 12) / cols;
   const x = clamp(20 + t.id * (hw + hgap), 10, W - w - 10), y = 16 + 112 + 6;
   ctx.globalAlpha = Math.min(1, ammoMenu.t * 2.5);
   ctx.fillStyle = 'rgba(8,12,22,.94)'; roundRect(x, y, w, h, 10); ctx.fill(); ctx.strokeStyle = t.color; ctx.lineWidth = 2; ctx.stroke();
