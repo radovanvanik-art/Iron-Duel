@@ -309,6 +309,7 @@
       <div class="actRow primary">
         <button class="btn" id="startBtn">▶ Nový zápas</button>
         <button class="btn alt" id="contBtn" style="display:none"></button>
+        <div id="onlineActions" class="row gap" style="display:none"></div>
       </div>
     </div>
 
@@ -331,7 +332,7 @@
         <li><b>Terény (9):</b> Lúka, Púšť, Zima, Les, Hory, Kaňon, Bažina, <b>Sopka</b> a <b>Pláž</b> sa generujú náhodne pred každým kolom (alebo si vyber konkrétnu). Každý mení vietor (silu, nárazovosť, smer), odpor vzduchu, gravitáciu, veľkosť kráterov a jazdu. Popis mapy uvidíš v obchode.</li>
         <li><b>Obtiažnosť:</b> Ľahká/Normálna/Ťažká mení silu a nárazovosť vetra pre celý zápas – ak ťa vietor stále rozhadzuje, skús ľahšiu. Oceľové bloky v teréne sa teraz dajú zničiť (sú len odolnejšie), takže sa za nimi už nedá zaseknúť.</li>
         <li><b>🎯 Vedľajšie misie:</b> každé kolo dostaneš v obchode náhodnú mini-výzvu (priamy zásah, zničiť budovu, zabiť súpera, prežiť bez zásahu…) za bonus € a XP navyše.</li>
-        <li><b>🌐 Online duel:</b> hraj proti niekomu na inom telefóne – jeden vytvorí izbu a pošle kód, druhý sa pripojí. Vyžaduje prihlásenie do Claude (rovnaká organizácia/účet na oboch zariadeniach). V obchode sa nakupuje striedavo.</li>
+        <li><b>🌐 Online duel:</b> hraj až so 4 hráčmi naraz na iných telefónoch – jeden vytvorí izbu (rovnaká obrazovka ako lokálne "Hrať teraz", zvolí si počet hráčov) a pošle kód, ostatní sa pripoja. Vyžaduje prihlásenie do Claude (rovnaká organizácia/účet na všetkých zariadeniach). V obchode sa nakupuje striedavo, jeden po druhom.</li>
         <li><b>Ťahy:</b> hráči idú v poradí. Vo svojom ťahu (30 s) sa môžeš pohnúť (spotrebuje palivo), namieriť, vybrať muníciu a <b>vystreliť iba raz</b> – potom je na rade ďalší. Vietor sa mení každý ťah. EMP vezme zasiahnutému v jeho ďalšom ťahu jazdu a mierenie.</li>
         <li><b>Dotyk:</b> virtuálne tlačidlá dole (každý hráč svoje, v jeho farbe, polopriehľadné aby bolo vidno tank pod nimi), alebo potiahni prstom pri tanku a delo sa namieri na prst. Vpravo hore ⛶ prepne celú obrazovku.</li>
         <li><b>Zbrane (15) a ich úrovne:</b> AP, Rakéta, HE, Odrazová, Laser, EMP, <b>Ananás</b> (po dopade sa rozpadne na 9 bômb), Sprcha (rozdelí sa vo vrchole), Sopečná bomba, Letecký útok, <b>Malá a Veľká atómovka</b>, Zemná bomba (kopec), Teleport a Servisná súprava (+60 HP). Desať útočných zbraní si v obchode možno vylepšiť na 3 úrovne (+18 % poškodenia/úroveň). Ikony munície dole v HUD sú klikateľné.</li>
@@ -389,7 +390,7 @@
 
 <div id="online" class="overlay">
   <div class="card">
-    <h2>🌐 Online duel (2 telefóny)</h2>
+    <h2>🌐 Online duel (2-4 hráči)</h2>
     <div id="onlineBody"></div>
     <div class="row" style="margin-top:12px"><button class="btn alt" id="onlineClose">Späť do menu</button></div>
   </div>
