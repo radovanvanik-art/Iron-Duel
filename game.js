@@ -548,6 +548,7 @@ $('storyBackBtn').addEventListener('click', () => { hide('end'); renderStoryList
 // nikdy nesimulujú fyziku súčasne, takže sa nemôže nič rozísť.
 let dbCap = null, dbCapTried = false;
 const net = { active: false, code: null, myIdx: 0, maxN: 2, players: [], shopStep: 0, unsub: null, busy: false, queued: false, err: '' };
+let netLiveTimer = 0;   // throttle pre priebežné publikovanie mierenia/letu strely počas ťahu (nie len na začiatku/konci)
 async function ensureDb() {
   if (dbCap || dbCapTried) return dbCap;
   dbCapTried = true;
@@ -593,6 +594,7 @@ function serializeState() {
     trees: trees.map(tr => ({ x: tr.x, y0: tr.y0, h: tr.h, w: tr.w })),
     wind, gustPhase, round, winRounds: WIN_ROUNDS, state, turnIdx, turnPhase, turnTimer, shopTimer,
     ready: ready.slice(), lastResult, shopStep: net.shopStep, tanks: tanks.map(serializeTank),
+    projectiles: projectiles.map(p => ({ x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, type: p.type })),
   };
 }
 let netLastBiome = null;
@@ -602,6 +604,7 @@ function applyState(d) {
   tanks = d.tanks.map(rehydrateTank);
   round = d.round; WIN_ROUNDS = d.winRounds; state = d.state; turnIdx = d.turnIdx; turnPhase = d.turnPhase; turnTimer = d.turnTimer;
   shopTimer = d.shopTimer; ready = d.ready.slice(); lastResult = d.lastResult || ''; net.shopStep = d.shopStep || 0;
+  projectiles = (d.projectiles || []).map(p => ({ x: p.x, y: p.y, type: p.type }));   // len na vykreslenie/kameru, pasívne zariadenie fyziku nesimuluje
 }
 function syncPassiveUI() {   // pasívne zariadenie: prekresli obrazovky podľa prijatého stavu (samo nič nesimuluje)
   document.body.dataset.state = state;
@@ -1482,6 +1485,10 @@ function update(dt) {
     obstacles.slice().forEach(o => { if (!o.steel && gy(o.x + o.w / 2) > o.base + 30) destroyObstacle(o); });
     tanks.forEach(t => { if (t.dead && Math.random() < 0.3) spark(t.x + rand(-14, 14), t.y - 20, rand(-8, 8), rand(-50, -20), 'rgba(60,60,60,.8)', 1, rand(4, 9), -10); });
     if (state === 'roundEnd') { endTimer -= dt; if (endTimer <= 0) afterRoundEnd(); }
+    if (net.active && state === 'play') {   // priebežne posiela mierenie aj let strely, nech to súper vidí naživo, nie iba na začiatku/konci ťahu
+      netLiveTimer -= dt;
+      if (netLiveTimer <= 0) { netLiveTimer = 0.15; netPublish(); }
+    }
   } else if (state === 'shop') {
     tanks.forEach(t => { t.tilt = tiltAt(t.x); t.y = groundAvg(t.x); });
   }
