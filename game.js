@@ -708,6 +708,7 @@ function renderStoryList() {
       '<button type="button" class="globeReset" id="globeReset" aria-label="Resetovať pohľad">⟲</button></div>';
     GLOBE.canvas = $('globeCanvas'); GLOBE.ctx = GLOBE.canvas.getContext('2d');
     initGlobeInput();
+    if (window.ResizeObserver) new ResizeObserver(() => globeResize()).observe($('globeWrap'));   // vždy prepočíta podľa skutočnej veľkosti (rieši to, že pri prvom zobrazení ešte nemusí byť layout hotový)
   }
   const pinsHost = $('globePins'); pinsHost.innerHTML = '';
   GLOBE.pins = globeMissionPts().map(p => {
