@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "game-asset-mcp": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": ["/c", "cd /d C:\\agent\\mcp-servers\\game-asset-mcp && node src/index.js"]
+    }
+  }
+}

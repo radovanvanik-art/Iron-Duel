@@ -17,15 +17,16 @@
   .padRow{display:flex;align-items:flex-end;gap:34px}
   .padGroup{display:flex;gap:18px}
   .padCenter{flex-direction:column;align-items:center;gap:9px}
-  .pad button{border-radius:16px;border:2px solid var(--pc,#fff);background:rgba(20,26,40,.24);color:#fff;font-weight:700;touch-action:none;padding:0;backdrop-filter:none}
+  .pad button{border-radius:16px;border:2px solid var(--pc,#fff);background:radial-gradient(circle at 35% 28%,rgba(255,255,255,.22),rgba(20,26,40,.4) 75%);color:#fff;font-weight:700;touch-action:none;padding:0;backdrop-filter:none;box-shadow:0 3px 10px rgba(0,0,0,.45),inset 0 1px 1px rgba(255,255,255,.2);text-shadow:0 1px 3px rgba(0,0,0,.7);transition:transform .08s ease}
   .pad.idle{opacity:.18}
+  .pad button:active,.pad button.on{transform:translateY(1px) scale(.97)}
   .pad .left,.pad .right,.pad .up,.pad .down{width:clamp(60px,13.5vh,96px);height:clamp(60px,13.5vh,96px);font-size:clamp(26px,5.4vh,39px)}
   .pad .ammoBtn{width:clamp(81px,15.5vh,126px);height:clamp(45px,9.5vh,66px);font-size:clamp(18px,3.7vh,26px)}
-  .pad .fireBtn{width:clamp(117px,23vh,174px);height:clamp(78px,16.5vh,114px);font-size:clamp(19px,4.3vh,28px);background:rgba(255,90,60,.3)}
-  .pad button.on{background:rgba(255,255,255,.4)}
-  .pad .fireBtn.on{background:rgba(255,90,60,.75)}
+  .pad .fireBtn{width:clamp(117px,23vh,174px);height:clamp(78px,16.5vh,114px);font-size:clamp(19px,4.3vh,28px);background:radial-gradient(circle at 35% 28%,rgba(255,170,140,.45),rgba(255,70,40,.3) 75%)}
+  .pad button.on{background:radial-gradient(circle at 35% 28%,rgba(255,255,255,.55),rgba(255,255,255,.3) 75%)}
+  .pad .fireBtn.on{background:radial-gradient(circle at 35% 28%,rgba(255,200,170,.95),rgba(255,70,40,.8) 75%);box-shadow:0 0 18px rgba(255,90,40,.7),inset 0 1px 1px rgba(255,255,255,.3)}
   .padPower{display:flex;align-items:center;gap:15px}
-  .pad .pinfo{min-width:63px;text-align:center;font-size:clamp(18px,3.6vh,24px);font-weight:800;color:var(--gold)}
+  .pad .pinfo{min-width:63px;text-align:center;font-size:clamp(18px,3.6vh,24px);font-weight:800;color:var(--gold);transition:color .15s ease}
   .powerSlider{-webkit-appearance:none;appearance:none;width:clamp(180px,42vh,375px);height:15px;border-radius:7px;background:rgba(255,255,255,.25);outline:none;touch-action:none}
   .powerSlider::-webkit-slider-thumb{-webkit-appearance:none;width:45px;height:45px;border-radius:50%;background:var(--pc,#fff);border:3px solid #111;cursor:pointer}
   .powerSlider::-moz-range-thumb{width:45px;height:45px;border-radius:50%;background:var(--pc,#fff);border:3px solid #111;cursor:pointer;border:3px solid #111}
@@ -36,9 +37,9 @@
     .padGroup{gap:21px}
     .pad .left,.pad .right,.pad .up,.pad .down{width:clamp(69px,19vh,108px);height:clamp(69px,19vh,108px);font-size:clamp(28px,7vh,45px);border-width:3px}
     .pad .ammoBtn{width:clamp(96px,19.5vh,150px);height:clamp(48px,10.5vh,69px);font-size:clamp(19px,4.3vh,28px)}
-    .pad .fireBtn{width:clamp(141px,29vh,219px);height:clamp(87px,19vh,129px);font-size:clamp(22px,5vh,33px);background:rgba(255,90,60,.25)}
-    .pad .fireBtn.on{background:rgba(255,90,60,.85)}
-    .pad button.on{background:rgba(255,255,255,.55)}
+    .pad .fireBtn{width:clamp(141px,29vh,219px);height:clamp(87px,19vh,129px);font-size:clamp(22px,5vh,33px);background:radial-gradient(circle at 35% 28%,rgba(255,170,140,.4),rgba(255,70,40,.25) 75%)}
+    .pad .fireBtn.on{background:radial-gradient(circle at 35% 28%,rgba(255,200,170,.95),rgba(255,70,40,.85) 75%);box-shadow:0 0 18px rgba(255,90,40,.7),inset 0 1px 1px rgba(255,255,255,.3)}
+    .pad button.on{background:radial-gradient(circle at 35% 28%,rgba(255,255,255,.6),rgba(255,255,255,.35) 75%)}
     .powerSlider{width:clamp(210px,51vh,435px)}
   }
   @media (orientation:landscape) and (max-height:420px){   /* veľmi nízke okno (mobil naležato bez adresného riadku) – väčšie a viac od seba, lebo mapa je zoomovaná a pod tlačidlami je dosť voľného miesta */

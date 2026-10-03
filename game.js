@@ -1188,6 +1188,7 @@ function fire(t) {
   projectiles.push({ x: m.x, y: m.y, vx: m.dx * sp, vy: m.dy * sp, type, owner: t.id, bounces: a.bounces || 0, life: 0 });
   tone(220, 70, 0.18, 'sawtooth', 0.07); noise(0.08, 0.08, 1500);
   for (let i = 0; i < 6; i++) spark(m.x, m.y, m.dx * 120 + rand(-60, 60), m.dy * 120 + rand(-60, 60), '#ffd27a', 0.25, 3, 300, 'glow');
+  glows.push({ x: m.x, y: m.y, r: 26, life: 0.12, max: 0.12, color: '#ffe9a0' });
   shake = Math.max(shake, 2);
 }
 function fireLaser(t, m) {
@@ -1242,8 +1243,9 @@ function killTank(t, ownerId) {
   checkRoundEnd();
 }
 function explosion(x, y, type, ownerId) {
-  lastImpact = { x, y, t: 1.1 };
-  const a = AMMO[type], owner = tanks[ownerId], dmg = a.dmg * dmgMul(owner, type);
+  const a = AMMO[type];
+  lastImpact = { x, y, t: 1.1, mag: a.splash || 0 };
+  const owner = tanks[ownerId], dmg = a.dmg * dmgMul(owner, type);
   if (a.dirt) { addDirt(x, y, a.dirt); for (let i = 0; i < 24; i++) spark(x, y, rand(-140, 140), rand(-220, -30), '#b58a5a', rand(0.4, 0.9), rand(3, 7)); noise(0.3, 0.2, 500); return; }
   if (a.tele) { teleportTank(ownerId, x); return; }
   if (a.strike) { strikes.push({ x, t: 1.3, n: a.strike, owner: ownerId }); tone(900, 300, 0.3, 'square', 0.05); return; }
@@ -1251,6 +1253,7 @@ function explosion(x, y, type, ownerId) {
   scorch(x, y, Math.max(20, a.crater * biome().crater * 1.6));
   if (a.crater >= 35 && owner) reward(owner, Math.round(a.crater / 8), 'terrain');   // veľký kráter = malý bonus za pretvarovanie terénu
   glows.push({ x, y, r: 40 + a.splash * 1.3, life: 0.4, max: 0.4, color: a.color });
+  if (a.splash >= 18) rings.push({ x, y, r: a.splash * 0.3, max: a.splash * 1.15, life: 0.35 + Math.min(0.3, a.splash / 400), max_life: 0.35 + Math.min(0.3, a.splash / 400) });
   trees.filter(tr => Math.hypot(tr.x - x, tr.y0 - tr.h / 2 - y) < a.splash + 25).forEach(tr => killTree(tr, ownerId));
   tanks.forEach(t => {
     if (t.dead) return;
@@ -1440,7 +1443,7 @@ function updateCamera(dt) {
     } else if (beams.length) {
       const b = beams[beams.length - 1]; tx = (b.x1 + b.x2) / 2; ty = (b.y1 + b.y2) / 2; tz = CAM_ZOOM_FLIGHT;
     } else if (strikes.length) { tx = strikes[0].x; ty = groundAvg(strikes[0].x) - 60; tz = CAM_ZOOM_FLIGHT; }
-    else if (lastImpact) { tx = lastImpact.x; ty = lastImpact.y; tz = CAM_ZOOM_FLIGHT; }
+    else if (lastImpact) { tx = lastImpact.x; ty = lastImpact.y; tz = CAM_ZOOM_FLIGHT + Math.min(0.35, (lastImpact.mag || 0) / 350); }
     else if (t && !t.dead) { tx = t.x; ty = t.y - 40; tz = CAM_ZOOM; }
   }
   const k = 1 - Math.pow(0.0025, Math.min(0.1, dt));   // plynulé tlmené sledovanie (framerate-nezávislé)
@@ -2021,8 +2024,11 @@ function drawHud() {
       t.hudRects.push({ k, x0: ax - 3, x1: ax + lw + 3, y0: y + 70, y1: y + 88 });
       ax += lw + 12;
     });
-    ctx.textAlign = 'right'; ctx.font = '13px system-ui'; ctx.fillStyle = 'rgba(255,255,255,.6)';
-    ctx.fillText(Math.round(t.ang) + '° · ' + Math.round(t.power) + '%', x + w - 12, y + 84);
+    ctx.textAlign = 'right'; ctx.font = '13px system-ui';
+    const angTxt = Math.round(t.ang) + '° · ', pw = Math.round(t.power), pwCol = pw >= 90 ? '#ff5f4a' : pw >= 60 ? '#ffd54a' : '#9fd0ff';
+    ctx.fillStyle = pwCol; const pwTxt = pw + '%', pwW = ctx.measureText(pwTxt).width;
+    ctx.fillText(pwTxt, x + w - 12, y + 84);
+    ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.fillText(angTxt, x + w - 12 - pwW, y + 84);
     const cur = AMMO[t.sel]; ctx.textAlign = 'left'; ctx.font = 'bold 12px system-ui'; ctx.fillStyle = cur.color;
     ctx.fillText('▶ ' + cur.name + (t.ammo[t.sel] === Infinity ? '' : ' ×' + t.ammo[t.sel]), x + 12, y + 101);
     ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.fillRect(x + 12, y + 106, bw, 3);
@@ -2041,7 +2047,9 @@ function drawHud() {
   if (wl) { const d = Math.sign(wl); ctx.beginPath(); ctx.moveTo(wx + wl * 0.8, wy - 4); ctx.lineTo(wx + wl * 0.8 - d * 8, wy - 9); ctx.lineTo(wx + wl * 0.8 - d * 8, wy + 1); ctx.fillStyle = '#9fd0ff'; ctx.fill(); }
   if (state === 'play') {   // kto je na rade + čas ťahu
     const t = tanks[turnIdx];
-    ctx.font = 'bold 16px system-ui'; ctx.fillStyle = t.color; ctx.textAlign = 'center';
+    ctx.font = 'bold 16px system-ui'; ctx.textAlign = 'center';
+    const low = turnPhase === 'aim' && turnTimer <= 5;
+    ctx.fillStyle = low && Math.floor(time * 4) % 2 ? '#ff4d3c' : t.color;
     ctx.fillText('NA RADE: ' + t.name + (turnPhase === 'aim' ? ' · ' + Math.max(0, Math.ceil(turnTimer)) + ' s' : ''), W / 2, 116 + off);
   }
 }
@@ -2442,10 +2450,16 @@ function positionPads() {   // vypočíta left tak, aby pad nikdy nepretiekol ce
 function updatePadLabels() {
   tanks.forEach((t, p) => {
     const txt = AMMO[t.sel].icon + (t.ammo[t.sel] === Infinity ? '' : ' ×' + t.ammo[t.sel]);
-    const pwTxt = Math.round(t.power) + '%';
+    const pw = Math.round(t.power), pwTxt = pw + '%';
     if (padButtons[p] && padButtons[p].pinfo && t.prevPw !== pwTxt) {
       t.prevPw = pwTxt; padButtons[p].pinfo.textContent = pwTxt;
-      if (padButtons[p].powerSlider && document.activeElement !== padButtons[p].powerSlider) padButtons[p].powerSlider.value = Math.round(t.power);
+      padButtons[p].pinfo.style.color = pw >= 90 ? '#ff5f4a' : pw >= 60 ? '#ffd54a' : '#9fd0ff';
+      if (padButtons[p].powerSlider) {
+        const sl = padButtons[p].powerSlider, pct = (pw - POWER_MIN) / (100 - POWER_MIN) * 100;
+        const col = pw >= 90 ? '#ff5f4a' : pw >= 60 ? '#ffd54a' : '#9fd0ff';
+        sl.style.background = 'linear-gradient(to right,' + col + ' 0%,' + col + ' ' + pct + '%,rgba(255,255,255,.22) ' + pct + '%,rgba(255,255,255,.22) 100%)';
+        if (document.activeElement !== sl) sl.value = pw;
+      }
     }
     const idle = !(state === 'play' && p === turnIdx && turnPhase === 'aim' && !t.dead);
     if (padEls[p] && t.prevIdle !== idle) { t.prevIdle = idle; padEls[p].classList.toggle('idle', idle); }
