@@ -82,7 +82,15 @@
   #shop .card{max-width:1120px}
   #story .card{max-width:none;width:calc(100vw - 24px);height:calc(100dvh - 24px);display:flex;flex-direction:column;overflow:hidden}
   #story .card>p{flex:none}
-  #storyList{flex:1;min-height:0;display:flex}
+  #storyList{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px}
+  .worldTabs{display:flex;gap:8px;flex:none}
+  .worldTab{flex:1;padding:9px 6px;border-radius:10px;border:2px solid rgba(255,255,255,.14);background:#141a2b;color:#fff;font-weight:800;font-size:13px;cursor:pointer;touch-action:manipulation;transition:filter .12s ease,transform .1s ease,box-shadow .12s ease;white-space:nowrap}
+  .worldTab:hover:not(:disabled){filter:brightness(1.15)}
+  .worldTab:active:not(:disabled){transform:translateY(1px)}
+  .worldTab.on{background:linear-gradient(180deg,#3a4568,#232a44);border-color:var(--gold);box-shadow:0 0 14px -2px rgba(255,213,74,.6)}
+  .worldTab.locked{opacity:.5;cursor:default}
+  .worldTab:disabled{cursor:default}
+  @media (max-width:560px){ .worldTab{font-size:11px;padding:8px 3px} }
   #storyDetail{flex:none}
   #story .row{flex:none}
   .globeWrap{position:relative;width:100%;flex:1;min-height:0;border-radius:14px;overflow:hidden;background:radial-gradient(ellipse at 50% 28%,#111c3c,#04060e 72%);margin:10px 0 16px;border:1px solid rgba(255,255,255,.08);touch-action:none;cursor:grab}

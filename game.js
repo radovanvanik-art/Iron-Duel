@@ -183,8 +183,17 @@ const BIOMES = {
   ruins: { name: 'Ruiny', icon: '🏚', windMul: 0.9, gust: 0.4, drag: 0.1, grav: 1, crater: 1.15, move: 0.75, fuel: 1.25, ice: false, bounce: 0.6, altWind: 0.1, obst: 0.7,
     sky: ['#241f28', '#5a4a45', '#c99a68'], hills: ['#332c30', '#453a3c', '#584a48'], ground: ['#6b6560', '#4f4a44', '#2a2620'], edge: '#948a7e', gtop: 330, gmid: 0.12, sun: '#e8b878', weather: 'dust',
     desc: 'Zbúrané mesto plné sutín a barikád. Prach v ovzduší mierne brzdí strely a vietor je premenlivý. Veľa prekážok komplikuje priamu paľbu, no ponúka aj kryt. Jazda po troskách je pomalšia.' },
+  // mimozemské biómy kampane (mimo náhodného výberu rýchleho zápasu – pozri BIOME_KEYS nižšie)
+  moon: { name: 'Mesiac', icon: '🌑', windMul: 0, gust: 0, drag: 0, grav: 0.42, crater: 1.6, move: 1.2, fuel: 0.85, ice: false, bounce: 0.55, altWind: 0, obst: 0.45,
+    sky: ['#000000', '#0a0a16', '#1c1c28'], hills: ['#2a2a30', '#3a3a42', '#4a4a52'], ground: ['#9a9a9e', '#6e6e74', '#38383c'], edge: '#c8c8cc', gtop: 330, gmid: 0.1, sun: '#fff8e0', weather: 'none',
+    desc: 'Nulová atmosféra: žiadny vietor, len tvoja presnosť. Nízka gravitácia poriadne predĺži dolet striel a sypký regolit znamená obrovské krátery.' },
+  mars: { name: 'Mars', icon: '🔴', windMul: 1.5, gust: 0.9, drag: 0, grav: 0.62, crater: 1.15, move: 0.9, fuel: 1.1, ice: false, bounce: 0.75, altWind: 0, obst: 0.5,
+    sky: ['#2a1008', '#8a4a28', '#e0a868'], hills: ['#4a2416', '#5e3020', '#72402a'], ground: ['#c1613a', '#9c4a2c', '#5c2a18'], edge: '#ff8a5a', gtop: 330, gmid: 0.12, sun: '#ffb878', weather: 'dust',
+    desc: 'Riedka atmosféra: slabšia gravitácia predĺži dolet striel, no časté piesočné búrky ich počas letu nepredvídateľne zahýbajú.' },
 };
-const BIOME_KEYS = Object.keys(BIOMES);
+const BIOME_KEYS = Object.keys(BIOMES).filter(k => k !== 'moon' && k !== 'mars');   // mimozemské biómy sú len pre kampaň, nie pre náhodný výber v rýchlom zápase
+const missionWorld = m => m.terrain === 'moon' ? 'moon' : m.terrain === 'mars' ? 'mars' : 'earth';
+const WORLD_META = { earth: { name: 'Zem', icon: '🌍' }, moon: { name: 'Mesiac', icon: '🌑' }, mars: { name: 'Mars', icon: '🔴' } };
 let biomeKey = 'meadow';
 const biome = () => BIOMES[biomeKey];
 
@@ -460,12 +469,102 @@ const STORY_MISSIONS = [
     text: 'Posledná obranná línia sa ukrýva v úzkej rokline. Vietor tu fúka ako z tunela a súperi majú kryt za každým balvanom.',
     win: 'Kaňon je dobytý. Zostáva už len samotná sopka, kde sa ukrýva najvyššie velenie.',
     lose: 'Ozvena kaňonu ti sťažila mierenie. Priprav si presnejšiu muníciu a skús to znova.' },
-  { title: 'Posledná bašta', terrain: 'volcano', bots: [{ lvl: 3, name: 'Maršal Popolec' }, { lvl: 3, name: 'Generálka Magma' }, { lvl: 3, name: 'Najvyšší veliteľ Vulkán' }], rounds: 3, money: 3000,
-    text: 'Toto je posledná bašta nepriateľa, hlboko v sopke. Traja najvyšší velitelia naraz – daj do toho úplne všetko, veliteľ.',
-    win: 'Posledná bašta padla. Veliteľstvo je oslobodené! Si najlepší tankový veliteľ ďaleko-ďaleko.',
+  { title: 'Tiene hlbokého lesa', terrain: 'forest', bots: [{ lvl: 3, name: 'Major Tieň' }, { lvl: 3, name: 'Kapitánka Ihličie' }, { lvl: 3, name: 'Poručík Konár' }], rounds: 2, money: 2850,
+    text: 'Nepriateľ sa stiahol hlboko do lesa a kryje sa za každým kmeňom. Traja skúsení velitelia na teba čakajú v tichu medzi stromami.',
+    win: 'Les je vyčistený. Prieskum hlási poslednú líniu nepriateľa v bažinatej nížine.',
+    lose: 'Les ťa pohltil skôr, než si stihol poriadne zamieriť. Priprav sa lepšie a skús to znova.' },
+  { title: 'Posledná bažina', terrain: 'swamp', bots: [{ lvl: 3, name: 'Generálka Hmla' }, { lvl: 3, name: 'Major Bahno' }, { lvl: 3, name: 'Kapitán Para' }], rounds: 2, money: 2950,
+    text: 'Hustá para a mäkká pôda skrývajú poslednú líniu nepriateľa pred sopkou. Traja velitelia bránia každý meter bahna.',
+    win: 'Bažina je za tebou. Pred veliteľstvom nepriateľa ostáva už len sopka.',
+    lose: 'Bažina ťa spomalila v nesprávnej chvíli. Doplň si palivo a skús to znova.' },
+  { title: 'Posledná bašta Zeme', terrain: 'volcano', bots: [{ lvl: 3, name: 'Maršal Popolec' }, { lvl: 3, name: 'Generálka Magma' }, { lvl: 3, name: 'Najvyšší veliteľ Vulkán' }], rounds: 3, money: 3100,
+    text: 'Toto je posledná pozemská bašta nepriateľa, hlboko v sopke. Traja najvyšší velitelia naraz – daj do toho úplne všetko, veliteľ.',
+    win: 'Posledná bašta padla, veliteľ! Pozemská vojna je vyhratá. Prieskumné satelity však práve zachytili vysielanie nepriateľských posíl – vysoko nad nami, na Mesiaci. Priprav sa opustiť Zem.',
     lose: 'Aj najvyšší velitelia sa dajú poraziť – nabudúce to dokážeš, veliteľ.' },
+  // ---------- MESIAC: nízka gravitácia, nulová atmosféra (žiadny vietor), obrovské krátery ----------
+  { title: 'Pristátie na Mori pokoja', terrain: 'moon', bots: [{ lvl: 1, name: 'Vojak Prach' }], rounds: 1, money: 3200,
+    text: 'Prvý krok na cudzom svete, veliteľ. Nulová atmosféra – žiadny vietor ťa už nerozhodí, no nízka gravitácia poriadne predĺži dolet každej strely.',
+    win: 'Mesačná základňa je zriadená. Prieskum hlási pohyb pri najbližšom kráteri.',
+    lose: 'Aj bez vetra sa dá minúť – priestrel bol tentoraz príliš dlhý. Priprav sa na nízku gravitáciu a skús to znova.' },
+  { title: 'Kráterové pole', terrain: 'moon', bots: [{ lvl: 2, name: 'Veliteľ Kráter' }], rounds: 1, money: 3350,
+    text: 'Pole hlbokých kráterov sťažuje priamu paľbu, no sypký regolit znamená obrovské výbuchy pri zásahu.',
+    win: 'Kráterové pole je tvoje. Pred tebou je tieň krátera Tycho.',
+    lose: 'Kráter ti zakryl výhľad na súpera. Skús oblúkovejšiu dráhu.' },
+  { title: 'Tieň krátera Tycho', terrain: 'moon', bots: [{ lvl: 2, name: 'Kapitánka Regolith' }], rounds: 2, money: 3500,
+    text: 'V hlbokom tieni krátera Tycho sa ukrýva skúsená veliteľka. Nízka gravitácia tu hrá v prospech toho, kto ju vie využiť.',
+    win: 'Tycho je dobytý. Ďalej ťa čaká opustená základňa v Mori daždov.',
+    lose: 'Tieň krátera ťa oklamal pri odhade vzdialenosti. Skús to znova, veliteľ.' },
+  { title: 'Základňa v Mori daždov', terrain: 'moon', bots: [{ lvl: 2, name: 'Major Apollo' }, { lvl: 2, name: 'Poručík Modul' }], rounds: 2, money: 3700,
+    text: 'Dvaja velitelia naraz bránia opustenú pozemskú základňu. Bez vetra je mierenie presné – ale aj súper mieri rovnako dobre.',
+    win: 'Základňa je dobytá späť. Pred tebou sa dvíha vysočina Copernicus.',
+    lose: 'Dvaja súperi naraz v nízkej gravitácii sú zradní. Doplň si muníciu a skús to znova.' },
+  { title: 'Vysočina Copernicus', terrain: 'moon', bots: [{ lvl: 3, name: 'Plukovníčka Vysočina' }, { lvl: 3, name: 'Kapitán Krík' }], rounds: 2, money: 3900,
+    text: 'Rozbitá vysočina plná balvanov z dávneho dopadu. Dvaja skúsení velitelia poznajú každý úkryt.',
+    win: 'Vysočina Copernicus je dobytá. Zvyšky nepriateľa ustupujú na odvrátenú stranu.',
+    lose: 'Balvany ti zablokovali priamy výstrel. Skús inú muníciu alebo vyšší oblúk.' },
+  { title: 'Temná strana', terrain: 'moon', bots: [{ lvl: 3, name: 'Generál Zatmenie' }, { lvl: 3, name: 'Majorka Prázdno' }], rounds: 2, money: 4100,
+    text: 'Na odvrátenej strane Mesiaca niet spojenia so Zemou – si tu sám, veliteľ. Dvaja velitelia bránia temnotu zúfalo.',
+    win: 'Temná strana je oslobodená. Prieskum hlási posledný kráter plný nepriateľov.',
+    lose: 'V temnote sa ťažko mieri. Priprav si osvetľovaciu muníciu a skús to znova.' },
+  { title: 'Posledný kráter', terrain: 'moon', bots: [{ lvl: 3, name: 'Plukovník Kráter' }, { lvl: 3, name: 'Majorka Trosky' }, { lvl: 3, name: 'Kapitán Úlomok' }], rounds: 2, money: 4350,
+    text: 'Traja velitelia naraz bránia posledný veľký kráter. Nízka gravitácia znamená, že aj ich strely letia nebezpečne ďaleko.',
+    win: 'Kráter je dobytý. Zostáva už len obrana hlavnej mesačnej základne.',
+    lose: 'Traja súperi v nízkej gravitácii sú nemilosrdní. Doplň si štít a skús to znova.' },
+  { title: 'Obrana mesačnej základne', terrain: 'moon', bots: [{ lvl: 3, name: 'Generálka Oběžná' }, { lvl: 3, name: 'Major Raketa' }, { lvl: 3, name: 'Kapitánka Modul' }], rounds: 2, money: 4600,
+    text: 'Hlavná nepriateľská základňa na Mesiaci sa bráni zo všetkých strán. Traja velitelia, nulový vietor, žiadne výhovorky.',
+    win: 'Mesačná základňa padla. Rádio však zachytáva podivný signál – odniekiaľ z hlbokého vesmíru.',
+    lose: 'Základňa je tvrdý oriešok. Vylepši si zbrane a skús to znova, veliteľ.' },
+  { title: 'Predvoj invázie', terrain: 'moon', bots: [{ lvl: 3, name: 'Veliteľ Signál' }, { lvl: 3, name: 'Majorka Echo' }, { lvl: 3, name: 'Kapitán Vlna' }], rounds: 2, money: 4850,
+    text: 'Podivný signál priviedol na Mesiac predvoj niečoho väčšieho. Traja velitelia bránia vysielač zúfalo – vedia, že prichádza pomoc.',
+    win: 'Predvoj je zničený, no signál smeruje ďalej – k červenej planéte. Mars čaká, veliteľ.',
+    lose: 'Predvoj bol len ochutnávka. Priprav sa poriadne a skús to znova.' },
+  { title: 'Generál Armstrong', terrain: 'moon', bots: [{ lvl: 3, name: 'Generál Armstrong' }, { lvl: 3, name: 'Plukovníčka Kráter' }, { lvl: 3, name: 'Major Modul' }], rounds: 3, money: 5200,
+    text: 'Posledná bitka o Mesiac. Generál Armstrong velí osobne – traja najskúsenejší velitelia naraz, daj do toho všetko.',
+    win: 'Mesiac je slobodný, veliteľ! Signál z hlbokého vesmíru však vedie priamo na Mars – a to, čo tam čaká, nie je ľudské. Priprav sa na let.',
+    lose: 'Aj generáli sa dajú poraziť. Nabudúce to dokážeš, veliteľ.' },
+  // ---------- MARS: slabšia gravitácia, riedka atmosféra s nepredvídateľnými piesočnými búrkami, mimozemská flotila ----------
+  { title: 'Červený piesok', terrain: 'mars', bots: [{ lvl: 2, name: 'Prieskumník Vryn' }], rounds: 1, money: 5500, bonusAmmo: { laser: 3, empBig: 2 },
+    text: 'Vítaj na Marse, veliteľ. Prvý kontakt s mimozemskou technikou – naše laboratóriá ti na cestu pribalili zopár kusov upravenej alienskej výzbroje. Riedka atmosféra predĺži dolet, no piesočné búrky strely nepredvídateľne zahýbajú.',
+    win: 'Prieskumník Vryn je zničený. Nová výzbroj funguje. Pred tebou je dunová bašta.',
+    lose: 'Marťanský piesok ťa prekvapil. Sleduj žltý terč predpokladaného dopadu pozornejšie.' },
+  { title: 'Dunová bašta', terrain: 'mars', bots: [{ lvl: 2, name: 'Veliteľ Kaas' }], rounds: 2, money: 5750,
+    text: 'Mimozemský veliteľ sa zahrabal medzi červené duny. Jeho tank nevyzerá ako nič, čo si kedy videl.',
+    win: 'Dunová bašta padla. Prieskum hlási signál z hlbín planéty.',
+    lose: 'Marťanská búrka ti zmenila smer strely priamo nad cieľom. Skús to znova.' },
+  { title: 'Signál z hlbín', terrain: 'mars', bots: [{ lvl: 3, name: 'Entita Mora' }, { lvl: 3, name: 'Droid Skelt' }], rounds: 2, money: 6000,
+    text: 'Dvaja mimozemskí velitelia bránia vstup do podzemného komplexu. Ich zbrane sú nebezpečne presné aj v slabšej gravitácii.',
+    win: 'Signál umlkol. Nad planinou sa však sťahuje obrovská piesočná búrka.',
+    lose: 'Entita Mora a Droid Skelt sú zohratý pár. Doplň si štít a skús to znova.' },
+  { title: 'Búrka nad planinou', terrain: 'mars', bots: [{ lvl: 3, name: 'Veliteľka Sarn' }, { lvl: 3, name: 'Zberač Thuul' }], rounds: 2, money: 6300,
+    text: 'Piesočná búrka zuří naplno – vietor mení smer uprostred letu strely. Dvaja velitelia to využívajú na maximum.',
+    win: 'Búrka utíchla, veliteľstvo padlo. Pred tebou je kaňon plný tieňov.',
+    lose: 'Búrka je nevyspytateľná. Sleduj ju pozorne a prispôsob muníciu.' },
+  { title: 'Kaňon tieňov', terrain: 'mars', bots: [{ lvl: 3, name: 'Strážca Oyrn' }, { lvl: 3, name: 'Entita Kessa' }], rounds: 2, money: 6600,
+    text: 'Obrovský marťanský kaňon skrýva dvoch strážcov v tieni útesov. Slabšia gravitácia predĺži každý výstrel ponad okraj.',
+    win: 'Kaňon tieňov je prekonaný. Prieskum hlási podzemné hniezdo neďaleko.',
+    lose: 'Tiene kaňonu skrývajú viac, než sa zdá. Skús inú muníciu a vyšší oblúk.' },
+  { title: 'Podzemné hniezdo', terrain: 'mars', bots: [{ lvl: 3, name: 'Veliteľ Zharn' }, { lvl: 3, name: 'Droid Myx' }, { lvl: 3, name: 'Entita Prask' }], rounds: 2, money: 6950,
+    text: 'Traja mimozemskí velitelia bránia hniezdo hlboko pod povrchom. Ich flotila sa tu pripravuje na niečo väčšie.',
+    win: 'Hniezdo je zničené. Nad planinou sa však zhromažďuje celý roj.',
+    lose: 'Traja súperi naraz pod povrchom sú nemilosrdní. Priprav sa lepšie a skús to znova.' },
+  { title: 'Roj', terrain: 'mars', bots: [{ lvl: 3, name: 'Roj-Matka Kallax' }, { lvl: 3, name: 'Droid Vesh' }, { lvl: 3, name: 'Droid Noor' }], rounds: 2, money: 7300,
+    text: 'Roj-Matka Kallax velí celému mimozemskému zoskupeniu. Traja súperi, nevyspytateľný vietor, žiadny priestor na chybu.',
+    win: 'Roj je rozprášený. Zostáva už len obliehanie základne Olympus.',
+    lose: 'Roj útočí koordinovane. Doplň si zásoby a skús to znova, veliteľ.' },
+  { title: 'Obliehanie základne Olympus', terrain: 'mars', bots: [{ lvl: 3, name: 'Veliteľka Thyra' }, { lvl: 3, name: 'Entita Volk' }, { lvl: 3, name: 'Droid Ress' }], rounds: 3, money: 7700,
+    text: 'Základňa Olympus je postavená v tieni najvyššej hory slnečnej sústavy. Traja velitelia ju bránia so všetkým, čo majú.',
+    win: 'Olympus padol. Pred veliteľstvom nepriateľa ostáva už len samotná brána.',
+    lose: 'Olympus je tvrdý oriešok. Vylepši si zbrane a skús to znova.' },
+  { title: 'Brána', terrain: 'mars', bots: [{ lvl: 3, name: 'Strážca Brány Ixal' }, { lvl: 3, name: 'Entita Sovrax' }, { lvl: 3, name: 'Droid Quor' }], rounds: 3, money: 8100,
+    text: 'Za touto bránou čaká najvyššie velenie celej mimozemskej invázie. Traja strážcovia ju bránia do posledného.',
+    win: 'Brána je prelomená. Najvyšší veliteľ Thessarax ťa už čaká.',
+    lose: 'Brána sa nedá prelomiť narýchlo. Priprav sa poriadne na posledný útok.' },
+  { title: 'Najvyšší Overlord Thessarax', terrain: 'mars', bots: [{ lvl: 3, name: 'Overlord Thessarax' }, { lvl: 3, name: 'Entita Kallax' }, { lvl: 3, name: 'Droid Vryn' }], rounds: 3, money: 8500,
+    text: 'Posledná bitka celej kampane. Overlord Thessarax velí osobne, po boku dvoch najsilnejších entít flotily. Daj do toho úplne všetko, veliteľ.',
+    win: 'Overlord Thessarax je porazený! Zem, Mesiac aj Mars sú slobodné. Si najlepší tankový veliteľ celej slnečnej sústavy.',
+    lose: 'Aj overlordi sa dajú poraziť. Nabudúce to dokážeš, veliteľ – pre celú slnečnú sústavu.' },
 ];
-const STORY_KEY = 'ironDuelStory_v3';   // v3: pribudlo 7 nových misií (18 spolu), staré indexy by sa nezhodovali
+const STORY_KEY = 'ironDuelStory_v4';   // v4: kampaň rozšírená na slnečnú sústavu (Zem 20 + Mesiac 10 + Mars 10 = 40 misií), staré indexy by sa nezhodovali
 let story = { active: false, idx: null, progress: { unlocked: 1, done: [] } };
 try {
   const v = JSON.parse(localStorage.getItem(STORY_KEY));
@@ -494,28 +593,34 @@ function startStoryMission(idx) {
   tanks.forEach(t => t.money = m.money);
   const prof = human.nick ? getProfile(human.nick) : null;   // munícia a vylepšenia, ktoré hráč neminul v predošlej misii, pokračujú aj sem
   if (prof && prof.storyLoadout) applyStoryLoadout(tanks[0], prof.storyLoadout);
+  if (m.bonusAmmo) Object.entries(m.bonusAmmo).forEach(([k, v]) => { tanks[0].ammo[k] = Math.min(capOf(k), (tanks[0].ammo[k] || 0) + v); });   // mimozemská výzbroj darom pri prvej misii na Marse
   round = 1; lastResult = '';
   buildPads(); enterShop();
-  $('shopTitle').textContent = 'Misia ' + (idx + 1) + ': ' + m.title + ' · ' + biome().icon + ' ' + biome().name;
+  const w = missionWorld(m), localIdx = worldMissions(w).findIndex(x => x.i === idx) + 1;
+  $('shopTitle').textContent = WORLD_META[w].icon + ' ' + WORLD_META[w].name + ' · Misia ' + localIdx + '/' + worldMissions(w).length + ': ' + m.title + ' · ' + biome().icon + ' ' + biome().name;
 }
 function storyMissionSub(m) {
   const B = BIOMES[m.terrain];
   return B.icon + ' ' + B.name + ' · ' + (m.bots.length > 1 ? ('Boss · ' + m.bots.length + ' súperi') : ('PC ' + ['', 'ľahký', 'stredný', 'ťažký'][m.bots[0].lvl])) + ' · do ' + m.rounds + ' ' + (m.rounds === 1 ? 'víťazstva' : 'víťazstiev');
 }
 // ---------- 3D zemeguľa kampane (ťahaním otáčateľná, ukazuje aj uzamknuté levely) ----------
-const GLOBE = { yaw: .6, pitch: -.25, vYaw: .08, vPitch: 0, zoom: 1, dragging: false, autoSpin: true, raf: null, canvas: null, ctx: null, pins: [], W: 0, H: 0, R: 0, stars: null };
-// kontinenty podľa biómu, nech sú misie rovnakého terénu zoskupené na vlastnej časti glóbusu (zima = polárna oblasť, atď.)
-const GLOBE_ANCHORS = {
-  winter:    { lat: 80, lon: 20,   r: 34 },   // polárna ľadová oblasť
-  mountains: { lat: 18, lon: 108,  r: 30 },
-  desert:    { lat: -6, lon: -58,  r: 27 },
-  ruins:     { lat: 42, lon: -98,  r: 24 },
-  canyon:    { lat: -34, lon: 158, r: 25 },
-  beach:     { lat: 4,  lon: 172,  r: 22 },
-  volcano:   { lat: -58, lon: -18, r: 25 },   // juh, "ohnivý kruh"
-  forest:    { lat: 50, lon: -42,  r: 21 },
-  swamp:     { lat: -15, lon: 62,  r: 20 },
-  meadow:    { lat: 26, lon: -160, r: 20 },
+const GLOBE = { world: 'earth', yaw: .6, pitch: -.25, vYaw: .08, vPitch: 0, zoom: 1, dragging: false, autoSpin: true, raf: null, canvas: null, ctx: null, pins: [], W: 0, H: 0, R: 0, stars: null };
+// kontinenty podľa biómu (osobitne pre každú planétu kampane), nech sú misie rovnakého terénu zoskupené na vlastnej časti glóbusu
+const GLOBE_ANCHORS_BY_WORLD = {
+  earth: {
+    winter:    { lat: 80, lon: 20,   r: 34 },   // polárna ľadová oblasť
+    mountains: { lat: 18, lon: 108,  r: 30 },
+    desert:    { lat: -6, lon: -58,  r: 27 },
+    ruins:     { lat: 42, lon: -98,  r: 24 },
+    canyon:    { lat: -34, lon: 158, r: 25 },
+    beach:     { lat: 4,  lon: 172,  r: 22 },
+    volcano:   { lat: -58, lon: -18, r: 25 },   // juh, "ohnivý kruh"
+    forest:    { lat: 50, lon: -42,  r: 21 },
+    swamp:     { lat: -15, lon: 62,  r: 20 },
+    meadow:    { lat: 26, lon: -160, r: 20 },
+  },
+  moon: { moon: { lat: 10, lon: 0, r: 200 } },   // jediný bióm pokrýva prakticky celú guľu
+  mars: { mars: { lat: 10, lon: 0, r: 200 } },
 };
 function hash2(a, b) { const s = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453; return s - Math.floor(s); }
 function sphericalOffset(latDeg, lonDeg, bearingDeg, distDeg) {   // bod vo zvolenej vzdialenosti/smere od kotvy (veľkokruh)
@@ -524,10 +629,13 @@ function sphericalOffset(latDeg, lonDeg, bearingDeg, distDeg) {   // bod vo zvol
   const lon = lon0 + Math.atan2(Math.sin(br) * Math.sin(d) * Math.cos(lat0), Math.cos(d) - Math.sin(lat0) * Math.sin(lat));
   return { lat: lat * 180 / Math.PI, lon: lon * 180 / Math.PI };
 }
-function globeMissionPts() {   // rozmiestnenie misií podľa biómových "kontinentov", nie náhodne po guli
-  const perBiome = {};
-  return STORY_MISSIONS.map((m, i) => {
-    const key = GLOBE_ANCHORS[m.terrain] ? m.terrain : 'meadow', a = GLOBE_ANCHORS[key];
+function worldMissions(w) { return STORY_MISSIONS.map((m, i) => ({ m, i })).filter(({ m }) => missionWorld(m) === w); }   // {m,i} s GLOBÁLNYM indexom i (do story.progress)
+function worldLocalNum(i) { const w = missionWorld(STORY_MISSIONS[i]); return worldMissions(w).findIndex(x => x.i === i) + 1; }   // poradie misie v rámci jej planéty (1..20/10/10), nie globálny index
+function worldUnlocked(w) { const wm = worldMissions(w); return !wm.length || wm[0].i < story.progress.unlocked; }
+function globeMissionPts() {   // rozmiestnenie misií aktuálnej planéty podľa biómových "kontinentov", nie náhodne po guli
+  const anchors = GLOBE_ANCHORS_BY_WORLD[GLOBE.world], perBiome = {};
+  return worldMissions(GLOBE.world).map(({ m, i }) => {
+    const key = anchors[m.terrain] ? m.terrain : Object.keys(anchors)[0], a = anchors[key];
     const j = perBiome[key] = (perBiome[key] || 0);
     perBiome[key]++;
     const bearing = (j * 137.508) % 360, dist = a.r * (j === 0 ? 0.08 : 0.42);
@@ -551,10 +659,11 @@ function globeResize() {
   GLOBE.R = Math.min(GLOBE.W, GLOBE.H) * .38 * GLOBE.zoom;
   if (!GLOBE.stars) GLOBE.stars = Array.from({ length: 140 }, () => ({ x: Math.random(), y: Math.random(), r: Math.random() * 1.4 + .3, a: Math.random() * .6 + .3 }));
 }
-function globeTerrainAt(latDeg, lonDeg) {   // ktorý biómový "kontinent" (ak žiadny, oceán), s roztrhaným pobrežím cez šum
+function globeTerrainAt(latDeg, lonDeg) {   // ktorý biómový "kontinent" (ak žiadny, oceán) na aktuálnej planéte, s roztrhaným pobrežím cez šum
+  const anchors = GLOBE_ANCHORS_BY_WORLD[GLOBE.world];
   let best = null, bestRatio = Infinity;
-  for (const key in GLOBE_ANCHORS) {
-    const a = GLOBE_ANCHORS[key];
+  for (const key in anchors) {
+    const a = anchors[key];
     let dLon = Math.abs(lonDeg - a.lon); if (dLon > 180) dLon = 360 - dLon;
     const dLat = latDeg - a.lat, ang = Math.sqrt(dLat * dLat + dLon * dLon * Math.pow(Math.cos(latDeg * Math.PI / 180), 2));
     const jag = 0.78 + 0.4 * hash2(Math.round(latDeg / 6), Math.round(lonDeg / 6));
@@ -700,16 +809,31 @@ function initGlobeInput() {
   wrap.addEventListener('wheel', e => { e.preventDefault(); GLOBE.zoom = Math.max(.6, Math.min(1.6, GLOBE.zoom * (1 - e.deltaY * .001))); globeResize(); }, { passive: false });
   $('globeReset').addEventListener('click', () => { GLOBE.yaw = .6; GLOBE.pitch = -.25; GLOBE.vYaw = .08; GLOBE.vPitch = 0; GLOBE.zoom = 1; GLOBE.autoSpin = true; globeResize(); });
 }
+function focusFrontierWorld() {   // pri (znova) otvorení kampane naskoč na planétu, kde je ďalšia misia
+  GLOBE.world = missionWorld(STORY_MISSIONS[clampInt(story.progress.unlocked - 1, 0, STORY_MISSIONS.length - 1, 0)]);
+}
+function switchGlobeWorld(w) {
+  if (w === GLOBE.world || !worldUnlocked(w)) return;
+  GLOBE.world = w; GLOBE_CELL_CACHE.clear();
+  GLOBE.vYaw = .0009; GLOBE.vPitch = 0; GLOBE.autoSpin = true;   // yaw/pitch nastaví renderStoryList priamym natočením na ďalšiu misiu
+  renderStoryList();
+}
 function renderStoryList() {
   const wrap = $('storyList');
   if (!GLOBE.canvas) {
-    wrap.innerHTML = '<div class="globeWrap" id="globeWrap"><canvas id="globeCanvas"></canvas><div class="globePins" id="globePins"></div>' +
-      '<div class="globeHint">🖱️ Ťahaj a otáčaj zemeguľu · 🔒 uzamknutá misia</div>' +
+    wrap.innerHTML = '<div class="worldTabs" id="worldTabs"></div><div class="globeWrap" id="globeWrap"><canvas id="globeCanvas"></canvas><div class="globePins" id="globePins"></div>' +
+      '<div class="globeHint">🖱️ Ťahaj a otáčaj glóbus · 🔒 uzamknutá misia</div>' +
       '<button type="button" class="globeReset" id="globeReset" aria-label="Resetovať pohľad">⟲</button></div>';
     GLOBE.canvas = $('globeCanvas'); GLOBE.ctx = GLOBE.canvas.getContext('2d');
     initGlobeInput();
     if (window.ResizeObserver) new ResizeObserver(() => globeResize()).observe($('globeWrap'));   // vždy prepočíta podľa skutočnej veľkosti (rieši to, že pri prvom zobrazení ešte nemusí byť layout hotový)
+    $('worldTabs').addEventListener('click', e => { const b = e.target.closest('[data-world]'); if (b && !b.disabled) switchGlobeWorld(b.dataset.world); });
   }
+  $('worldTabs').innerHTML = ['earth', 'moon', 'mars'].map(w => {
+    const unlocked = worldUnlocked(w), on = w === GLOBE.world;
+    return '<button type="button" class="worldTab' + (on ? ' on' : '') + (unlocked ? '' : ' locked') + '" data-world="' + w + '"' + (unlocked ? '' : ' disabled') + '>' +
+      WORLD_META[w].icon + ' ' + WORLD_META[w].name + (unlocked ? '' : ' 🔒') + '</button>';
+  }).join('');
   const pinsHost = $('globePins'); pinsHost.innerHTML = '';
   GLOBE.pins = globeMissionPts().map(p => {
     const unlocked = p.i < story.progress.unlocked, done = !!story.progress.done[p.i];
@@ -718,18 +842,22 @@ function renderStoryList() {
     btn.type = 'button'; btn.className = 'missionPin' + (unlocked ? '' : ' locked');
     btn.style.setProperty('--pc', pc); btn.setAttribute('aria-label', p.m.title);
     if (unlocked) btn.dataset.mission = p.i;
-    btn.innerHTML = (done ? '<span class="chk">✓</span>' : '') + '<span class="num">' + (unlocked ? (p.i + 1) : '🔒') + '</span><span class="ic">' + BIOMES[p.m.terrain].icon + '</span>';
+    btn.innerHTML = (done ? '<span class="chk">✓</span>' : '') + '<span class="num">' + (unlocked ? worldLocalNum(p.i) : '🔒') + '</span><span class="ic">' + BIOMES[p.m.terrain].icon + '</span>';
     pinsHost.appendChild(btn); p.el = btn; return p;
   });
-  const next = STORY_MISSIONS[clampInt(story.progress.unlocked - 1, 0, STORY_MISSIONS.length - 1, 0)];
-  $('storyDetail').innerHTML = '<b>' + (story.progress.unlocked) + '. ' + esc(next.title) + '</b><br>' + esc(storyMissionSub(next)) + '<br>' + esc(next.text);
+  const frontier = clampInt(story.progress.unlocked - 1, 0, STORY_MISSIONS.length - 1, 0);
+  const target = GLOBE.pins.find(p => p.i === frontier) || GLOBE.pins[GLOBE.pins.length - 1] || GLOBE.pins[0];
+  if (target) {
+    $('storyDetail').innerHTML = '<b>' + worldLocalNum(target.i) + '. ' + esc(target.m.title) + '</b><br>' + esc(storyMissionSub(target.m)) + '<br>' + esc(target.m.text);
+    GLOBE.yaw = -target.lon; GLOBE.pitch = Math.max(-1.1, Math.min(1.1, target.lat));   // glóbus sa hneď natočí na ďalšiu misiu, nech ju netreba hľadať ťahaním
+  }
   startGlobeLoop();
 }
-$('homeStoryBtn').addEventListener('click', () => { hide('home'); renderStoryList(); show('story'); });
+$('homeStoryBtn').addEventListener('click', () => { hide('home'); focusFrontierWorld(); renderStoryList(); show('story'); });
 $('storyClose').addEventListener('click', () => { stopGlobeLoop(); hide('story'); show('home'); });
 function showStoryDetail(i) {
   const m = STORY_MISSIONS[i];
-  $('storyDetail').innerHTML = '<b>' + (i + 1) + '. ' + esc(m.title) + '</b><br>' + esc(storyMissionSub(m)) + '<br>' + esc(m.text);
+  $('storyDetail').innerHTML = '<b>' + worldLocalNum(i) + '. ' + esc(m.title) + '</b><br>' + esc(storyMissionSub(m)) + '<br>' + esc(m.text);
 }
 $('storyList').addEventListener('click', e => {
   const r = e.target.closest('[data-mission]'); if (!r) return;
@@ -743,7 +871,7 @@ $('storyList').addEventListener('mouseover', e => {
 });
 $('storyNextBtn').addEventListener('click', () => startStoryMission(story.idx + 1));
 $('storyRetryBtn').addEventListener('click', () => startStoryMission(story.idx));
-$('storyBackBtn').addEventListener('click', () => { hide('end'); renderStoryList(); show('story'); });
+$('storyBackBtn').addEventListener('click', () => { hide('end'); focusFrontierWorld(); renderStoryList(); show('story'); });
 
 // ---------- online multiplayer (2-4 zariadení, izba so slotmi) ----------
 // Model: presne jedno zariadenie je vždy "na ťahu" (aj v obchode) a jediné mení stav;
@@ -1025,7 +1153,7 @@ function genArena(key) {
   biomeKey = key; const B = BIOMES[key];
   const T = [noiseTbl(), noiseTbl(), noiseTbl(), noiseTbl()], off = rand(0, 30);
   const nz = (k, per, x) => vnoise(T[k], x / per + off);
-  const prm = { meadow: [475, 100, 520, 46, 210, 14, 85], desert: [500, 92, 620, 40, 260, 9, 95], winter: [480, 100, 560, 46, 240, 10, 95], forest: [470, 92, 480, 42, 190, 10, 75], canyon: [470, 120, 540, 55, 220, 14, 90], swamp: [470, 55, 600, 26, 260, 8, 55], volcano: [460, 105, 500, 48, 200, 12, 90], beach: [500, 55, 560, 22, 240, 8, 65], ruins: [475, 90, 480, 50, 200, 16, 80] }[key];
+  const prm = { meadow: [475, 100, 520, 46, 210, 14, 85], desert: [500, 92, 620, 40, 260, 9, 95], winter: [480, 100, 560, 46, 240, 10, 95], forest: [470, 92, 480, 42, 190, 10, 75], canyon: [470, 120, 540, 55, 220, 14, 90], swamp: [470, 55, 600, 26, 260, 8, 55], volcano: [460, 105, 500, 48, 200, 12, 90], beach: [500, 55, 560, 22, 240, 8, 65], ruins: [475, 90, 480, 50, 200, 16, 80], moon: [475, 85, 460, 55, 190, 22, 65], mars: [480, 95, 520, 46, 220, 13, 85] }[key];
   for (let x = 0; x <= W; x++) {
     let y;
     if (key === 'mountains') {   // hrebeňový šum = ostré štíty a hlboké údolia
@@ -1060,7 +1188,7 @@ function genArena(key) {
   const free = x => sx.every(q => Math.abs(x - q) > 95) && obstacles.every(o => x < o.x - 25 || x > o.x + o.w + 25);
   const put = (cnt, make) => { for (let i = 0, tries = 0; i < cnt && tries < cnt * 8; tries++) { const x = rand(20, W - 20); if (!free(x)) continue; make(x, ground[Math.round(x)]); i++; } };
   if (B.trees) put(12 + Math.floor(Math.random() * 6), (x, y0) => trees.push({ x, y0, h: rand(62, 112), w: rand(34, 50) }));
-  const D = { meadow: [['bush', 12], ['rock', 4]], desert: [['cactus', 9], ['rock', 6]], winter: [['pine', 10], ['rock', 4]], forest: [['bush', 10], ['rock', 3]], mountains: [['pine', 8], ['rock', 8]], canyon: [['rock', 16]], swamp: [['bush', 15], ['rock', 3]], volcano: [['rock', 14]], beach: [['bush', 6], ['rock', 3]], ruins: [['rock', 22]] }[key];
+  const D = { meadow: [['bush', 12], ['rock', 4]], desert: [['cactus', 9], ['rock', 6]], winter: [['pine', 10], ['rock', 4]], forest: [['bush', 10], ['rock', 3]], mountains: [['pine', 8], ['rock', 8]], canyon: [['rock', 16]], swamp: [['bush', 15], ['rock', 3]], volcano: [['rock', 14]], beach: [['bush', 6], ['rock', 3]], ruins: [['rock', 22]], moon: [['rock', 20]], mars: [['rock', 12]] }[key];
   D.forEach(([type, cnt]) => put(cnt, (x, y0) => { if (key === 'mountains' && type === 'pine' && y0 < 430) return; decor.push({ type, x, y0, s: rand(0.7, 1.3) }); }));
 
   hills = [];
