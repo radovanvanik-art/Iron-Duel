@@ -349,15 +349,25 @@ function cloudPush() {   // write-through: po uložení lokálneho profilu potic
     story_loadout: p.storyLoadout, story_unlocked: p.story ? p.story.unlocked : 1, story_done: p.story ? p.story.done : [],
   }).eq('id', cloudUser.id).then(({ error }) => { if (error) console.warn('Supabase sync zlyhal:', error.message); });
 }
+const hasRealProgress = p => !!p && (p.matches > 0 || (p.story && p.story.unlocked > 1) || p.storyLoadout);
+function findMigratableLocalProfile(excludeKey) {   // nájde lokálny (hosťovský) profil v tomto prehliadači s najväčším postupom - na migráciu do čerstvého Google účtu
+  let best = null;
+  for (const k in profiles) {
+    if (k === excludeKey || !Object.prototype.hasOwnProperty.call(profiles, k)) continue;
+    const p = profiles[k];
+    if (!hasRealProgress(p)) continue;
+    if (!best || (p.story ? p.story.unlocked : 1) > (best.story ? best.story.unlocked : 1) || p.matches > best.matches) best = p;
+  }
+  return best;
+}
 async function enterCloudSession(user) {   // zavolá sa po úspešnom Google prihlásení (aj pri obnovení už prihlásenej relácie)
   const row = await cloudFetchProfile(user.id);
   if (!row) return false;   // DB riadok ešte nevznikol (trigger beží tesne po registrácii) - skús znova nabudúce
-  const prevNick = setup.players[0].nick;   // prezývka aktívna v tomto prehliadači TESNE pred Google prihlásením (napr. stará hosťovská) - na migráciu postupu
-  const prevLocal = prevNick ? getProfile(prevNick) : null;
   const key = nickKey(row.nick);
+  const prevNick = setup.players[0].nick;   // prezývka aktívna v tomto prehliadači TESNE pred Google prihlásením (napr. stará hosťovská) - na migráciu postupu
+  const prevLocal = (prevNick && hasRealProgress(getProfile(prevNick))) ? getProfile(prevNick) : findMigratableLocalProfile(key);   // ak nebola aktívna žiadna (napr. si sa medzitým odhlásil), skús nájsť akýkoľvek lokálny profil s postupom
   const cloudIsFresh = !row.matches && !row.wins && clampInt(row.story_unlocked, 1, STORY_MISSIONS.length, 1) <= 1 && !row.story_loadout;
-  const prevHasProgress = prevLocal && (prevLocal.matches > 0 || (prevLocal.story && prevLocal.story.unlocked > 1) || prevLocal.storyLoadout);
-  if (cloudIsFresh && prevHasProgress) {   // čerstvý/prázdny cloud profil, ale v tomto prehliadači existuje staršia rozohratá hosťovská prezývka - prenes JEJ postup (aj keď sa prezývky zhodujú len formou veľkých písmen)
+  if (cloudIsFresh && hasRealProgress(prevLocal)) {   // čerstvý/prázdny cloud profil, ale v tomto prehliadači existuje staršia rozohratá hosťovská prezývka - prenes JEJ postup
     profiles[key] = Object.assign({}, prevLocal, { nick: row.nick, color: isColor(row.color) ? row.color : prevLocal.color });   // prenes doterajší lokálny postup do nového Google účtu
     cloudUser = { id: user.id, nick: row.nick };
     cloudPush();
