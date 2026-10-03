@@ -604,7 +604,18 @@ function storyMissionSub(m) {
   return B.icon + ' ' + B.name + ' · ' + (m.bots.length > 1 ? ('Boss · ' + m.bots.length + ' súperi') : ('PC ' + ['', 'ľahký', 'stredný', 'ťažký'][m.bots[0].lvl])) + ' · do ' + m.rounds + ' ' + (m.rounds === 1 ? 'víťazstva' : 'víťazstiev');
 }
 // ---------- 3D zemeguľa kampane (ťahaním otáčateľná, ukazuje aj uzamknuté levely) ----------
-const GLOBE = { world: 'earth', yaw: .6, pitch: -.25, vYaw: .08, vPitch: 0, zoom: 1, dragging: false, autoSpin: true, raf: null, canvas: null, ctx: null, pins: [], W: 0, H: 0, R: 0, stars: null };
+const GLOBE = { world: 'earth', yaw: .6, pitch: -.25, vYaw: .08, vPitch: 0, zoom: 1, dragging: false, autoSpin: true, raf: null, canvas: null, ctx: null, pins: [], W: 0, H: 0, R: 0, stars: null, cloudDrift: 0 };
+// svetelný model každej planéty: pevný smer "slnka" (nezávislý od rotácie gule) vytvára putujúcu hranicu dňa/noci pri otáčaní;
+// ambient = jas nočnej strany, term = šírka prechodu (ostrý na Mesiaci bez atmosféry, mäkký na Zemi), atmo/atmoR = farba a dosah žiary, sheen = lesk oceánov/ľadu, rim = okrajové stmavnutie
+const WORLD_LIGHT = {
+  earth: { dx: .55, dy: .33, dz: .76, ambient: .22, term: .32, atmo: 'rgba(90,155,255,.35)', atmoR: 1.3, sheen: .22, rim: .35, rimCol: '0,0,0' },
+  moon:  { dx: .6, dy: .18, dz: .78, ambient: .035, term: .05, atmo: 'rgba(140,140,160,.07)', atmoR: 1.08, sheen: .03, rim: .55, rimCol: '0,0,0' },
+  mars:  { dx: .52, dy: .28, dz: .81, ambient: .14, term: .16, atmo: 'rgba(224,150,96,.26)', atmoR: 1.2, sheen: .07, rim: .4, rimCol: '40,14,4' },
+};
+function globeBump(latDeg, lonDeg) {   // pseudonáhodné "krátery"/hrbole pre Mesiac a Mars - mimo zemského biómového tieňovania
+  const n = hash2(Math.round(latDeg * 1.7) + 11, Math.round(lonDeg * 1.7) + 29);
+  return n > .88 ? -.38 : n > .8 ? .22 : 0;   // tmavé dno krátera, svetlý okraj, inak bez zmeny
+}
 // kontinenty podľa biómu (osobitne pre každú planétu kampane), nech sú misie rovnakého terénu zoskupené na vlastnej časti glóbusu
 const GLOBE_ANCHORS_BY_WORLD = {
   earth: {
@@ -661,6 +672,8 @@ function globeResize() {
 }
 function globeTerrainAt(latDeg, lonDeg) {   // ktorý biómový "kontinent" (ak žiadny, oceán) na aktuálnej planéte, s roztrhaným pobrežím cez šum
   const anchors = GLOBE_ANCHORS_BY_WORLD[GLOBE.world];
+  const soleKeys = Object.keys(anchors);
+  if (soleKeys.length === 1) return soleKeys[0];   // Mesiac/Mars: jediný povrch pokrýva celú guľu, žiadny "oceán"
   let best = null, bestRatio = Infinity;
   for (const key in anchors) {
     const a = anchors[key];
@@ -686,7 +699,7 @@ function globeCellColor(latDeg, lonDeg) {
     const depth = .35 + .5 * hash2(Math.round(latDeg / 5) + 50, Math.round(lonDeg / 5) + 50);
     col = depth > .6 ? '#123a68' : depth > .35 ? '#0c2a50' : '#081c38';
   }
-  if (Math.abs(latDeg) > 80) col = n > .5 ? '#eef6ff' : '#dcebfb';   // trvalé ľadové čiapky na póloch
+  if (GLOBE.world === 'earth' && Math.abs(latDeg) > 80) col = n > .5 ? '#eef6ff' : '#dcebfb';   // trvalé ľadové čiapky na póloch (len Zem)
   GLOBE_CELL_CACHE.set(ck, col);
   return col;
 }
@@ -698,15 +711,16 @@ function drawGlobe() {
   ctx.save();
   GLOBE.stars.forEach(s => { ctx.globalAlpha = s.a; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(s.x * GLOBE.W, s.y * GLOBE.H, s.r, 0, 7); ctx.fill(); });
   ctx.restore();
-  const glow = ctx.createRadialGradient(cx, cy, R * .92, cx, cy, R * 1.3);
-  glow.addColorStop(0, 'rgba(90,155,255,.35)'); glow.addColorStop(1, 'rgba(90,155,255,0)');
-  ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(cx, cy, R * 1.3, 0, 7); ctx.fill();
+  const WL = WORLD_LIGHT[GLOBE.world] || WORLD_LIGHT.earth;
+  const glow = ctx.createRadialGradient(cx, cy, R * .92, cx, cy, R * WL.atmoR);
+  glow.addColorStop(0, WL.atmo); glow.addColorStop(1, WL.atmo.replace(/[\d.]+\)$/, '0)'));
+  ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(cx, cy, R * WL.atmoR, 0, 7); ctx.fill();
   ctx.save();   // orezanie na kruh gule, nech sú rohy políčok terénu čisté
   ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.clip();
   ctx.fillStyle = '#081634'; ctx.fillRect(cx - R, cy - R, R * 2, R * 2);
-  const latStep = 9;
+  const latStep = 7;
   for (let la = -90 + latStep / 2; la < 90; la += latStep) {
-    const lonN = Math.max(8, Math.round(36 * Math.cos(la * Math.PI / 180)));
+    const lonN = Math.max(10, Math.round(46 * Math.cos(la * Math.PI / 180)));
     const lonStep = 360 / lonN;
     for (let lo = -180 + lonStep / 2; lo < 180; lo += lonStep) {
       const corners = [
@@ -717,14 +731,39 @@ function drawGlobe() {
       ].map(globeRotate);
       const avgZ = (corners[0].z + corners[1].z + corners[2].z + corners[3].z) / 4;
       if (avgZ < -.04) continue;
+      const avgX = (corners[0].x + corners[1].x + corners[2].x + corners[3].x) / 4;
+      const avgY = (corners[0].y + corners[1].y + corners[2].y + corners[3].y) / 4;
       const col = hex2rgb(globeCellColor(la, lo));
-      const light = Math.max(.42, Math.min(1.08, .55 + avgZ * .55));
+      // osvetlenie podľa pevného smeru "slnka" (nie podľa kamery) - pri rotácii gule po nej putuje hranica dňa a noci
+      const ndotl = avgX * WL.dx + avgY * WL.dy + avgZ * WL.dz;
+      let t = Math.max(0, Math.min(1, (ndotl + WL.term) / (2 * WL.term))); t = t * t * (3 - 2 * t);
+      let light = WL.ambient + (1 - WL.ambient) * t;
+      if (GLOBE.world !== 'earth') light *= 1 + globeBump(la, lo);   // krátery: tmavé dná, svetlé okraje
+      light = Math.max(.02, Math.min(1.25, light));
       ctx.fillStyle = 'rgb(' + Math.min(255, col[0] * light | 0) + ',' + Math.min(255, col[1] * light | 0) + ',' + Math.min(255, col[2] * light | 0) + ')';
       ctx.beginPath();
       ctx.moveTo(cx + corners[0].x * R, cy - corners[0].y * R);
       for (let k = 1; k < 4; k++) ctx.lineTo(cx + corners[k].x * R, cy - corners[k].y * R);
       ctx.closePath(); ctx.fill();
     }
+  }
+  if (GLOBE.world === 'earth') {   // priesvitná vrstva mrakov, unáša sa po inej dráhe ako povrch (paralaxa)
+    const cLatStep = 13;
+    for (let la = -84 + cLatStep / 2; la < 90; la += cLatStep) {
+      const lonN = Math.max(6, Math.round(22 * Math.cos(la * Math.PI / 180))), lonStep = 360 / lonN;
+      for (let lo = -180 + lonStep / 2; lo < 180; lo += lonStep) {
+        const cn = hash2(Math.round(la / cLatStep) + 7, Math.round((lo + GLOBE.cloudDrift) / lonStep) + 91);
+        if (cn < .58) continue;
+        const p = globeRotate({ lat: la * Math.PI / 180, lon: (lo + GLOBE.cloudDrift) * Math.PI / 180 });
+        if (p.z < -.08) continue;
+        const sun = Math.max(.3, Math.min(1, .5 + (p.x * WL.dx + p.y * WL.dy + p.z * WL.dz)));
+        const rr = R * (.05 + .05 * (cn - .58));
+        ctx.globalAlpha = (cn - .58) * 1.1 * (.35 + .5 * sun);
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(cx + p.x * R, cy - p.y * R, rr, 0, 7); ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
   }
   ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(10,16,32,.18)';
   for (let g = 0; g < 12; g++) {   // poludníky (jemné, len na odlíšenie zakrivenia)
@@ -752,10 +791,10 @@ function drawGlobe() {
   }
   ctx.restore();
   const sheen = ctx.createRadialGradient(cx - R * .4, cy - R * .45, 0, cx - R * .4, cy - R * .45, R * 1.1);
-  sheen.addColorStop(0, 'rgba(255,255,255,.22)'); sheen.addColorStop(1, 'rgba(255,255,255,0)');
+  sheen.addColorStop(0, 'rgba(255,255,255,' + WL.sheen.toFixed(2) + ')'); sheen.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = sheen; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.fill();
   const rim = ctx.createRadialGradient(cx, cy, R * .88, cx, cy, R);
-  rim.addColorStop(0, 'rgba(0,0,0,0)'); rim.addColorStop(1, 'rgba(0,0,0,.35)');
+  rim.addColorStop(0, 'rgba(' + WL.rimCol + ',0)'); rim.addColorStop(1, 'rgba(' + WL.rimCol + ',' + WL.rim.toFixed(2) + ')');
   ctx.fillStyle = rim; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.fill();
 }
 function layoutGlobePins() {
@@ -776,6 +815,7 @@ function globeFrame() {
     if (GLOBE.autoSpin && Math.abs(GLOBE.vYaw) < .0009) GLOBE.vYaw = .0009;
     else if (!GLOBE.autoSpin && Math.abs(GLOBE.vYaw) < .0015) GLOBE.vYaw = 0;
   }
+  GLOBE.cloudDrift += .012;   // oblaky sa posúvajú po vlastnej (pomalšej) dráhe nezávisle od otáčania Zeme
   drawGlobe(); layoutGlobePins();
   GLOBE.raf = requestAnimationFrame(globeFrame);
 }
