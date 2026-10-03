@@ -292,6 +292,20 @@
   #home .homeRow .btn:nth-child(4){animation-delay:.15s}
   #home .homeRow .btn:nth-child(5){animation-delay:.19s}
   #home .homeRow .btn:nth-child(6){animation-delay:.23s}
+  #home .homeRow .btn:nth-child(7){animation-delay:.27s}
+  #home .homeRow .btn:nth-child(8){animation-delay:.31s}
+  .achRow{display:flex;align-items:center;gap:12px;padding:10px 8px;border-top:1px solid rgba(255,255,255,.08);border-radius:8px;transition:background .12s ease}
+  .achRow:hover{background:rgba(255,255,255,.04)}
+  .achRow .achIcon{font-size:26px;width:38px;text-align:center;flex:none;filter:grayscale(1) opacity(.35)}
+  .achRow.on .achIcon{filter:none}
+  .achRow .achBody{flex:1;min-width:0}
+  .achRow .achTitle{font-weight:800;color:#8891a5}
+  .achRow.on .achTitle{color:var(--gold)}
+  .achRow .achDesc{font-size:12.5px;color:#9aa3b8;margin-top:1px}
+  .achRow .achCheck{font-size:18px;flex:none;opacity:.25}
+  .achRow.on .achCheck{opacity:1}
+  #achList{max-height:min(60vh,520px);overflow-y:auto;margin-top:10px}
+  #achSummary{color:var(--gold);font-weight:700}
   @keyframes rowIn{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:translateX(0)}}
   #homeGreet{color:var(--gold);font-weight:700;margin:-4px 0 4px;text-shadow:0 0 8px rgba(255,213,74,.35)}
   #login .pname{text-align:center;font-size:17px;margin-top:6px;background:rgba(255,255,255,.06);border:2px solid rgba(255,255,255,.18);border-radius:10px;color:#fff;padding:10px 14px;transition:border-color .15s ease,background .15s ease}
@@ -327,6 +341,7 @@
       <button class="btn alt" id="homeContBtn" style="display:none"></button>
       <button class="btn alt" id="homeStoryBtn">📖 Kampaň</button>
       <button class="btn alt" id="homeOnlineBtn">🌐 Multiplayer</button>
+      <button class="btn alt" id="homeAchBtn">🏆 Odznaky</button>
       <button class="btn alt" id="homeSettingsBtn">⚙ Nastavenia</button>
       <button class="btn alt" id="homeCreditsBtn">📜 Kredity</button>
       <button class="btn alt" id="homeLogoutBtn">🚪 Odhlásiť</button>
@@ -416,6 +431,17 @@
   </div>
 </div>
 
+<div id="achievements" class="overlay hub">
+  <div class="menuBg" aria-hidden="true"></div>
+  <div class="card" style="max-width:560px">
+    <div class="logoBadge"><svg><use href="#ironIcon"/></svg></div>
+    <h1>IRON DUEL <span>: TANK COMMANDERS</span></h1>
+    <p id="achSummary"></p>
+    <div id="achList"></div>
+    <div class="row" style="justify-content:center;margin-top:12px"><button class="btn alt" id="achBackBtn">◀ Domov</button></div>
+  </div>
+</div>
+
 <div id="story" class="overlay">
   <div class="card">
     <h2>📖 Príbehový režim</h2>
@@ -500,4 +526,4 @@
     window.__firestoreDb = firebase.firestore();
   } catch (_) { /* mimo web hostingu (napr. Claude Artifact) - použije sa záložné window.claude db */ }
 </script>
-<script src="game.js?v=6"></script>
+<script src="game.js?v=7"></script>

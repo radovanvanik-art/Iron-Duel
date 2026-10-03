@@ -317,7 +317,7 @@ const NICK_RE = /^[\p{L}\p{N}][\p{L}\p{N} _.\-]{1,13}$/u;
 let profiles = {};
 try { const v = JSON.parse(localStorage.getItem(PROF_KEY)); if (v && typeof v === 'object' && !Array.isArray(v)) profiles = v; } catch (_) {}
 const nickKey = str => 'n_' + str.trim().toLowerCase();      // predpona chráni pred kľúčmi ako __proto__
-const newProfile = (nick, color) => ({ nick, color, created: Date.now(), matches: 0, wins: 0, rounds: 0, kills: 0, bestLevel: 1, level: 1, xp: 0, last: 0, storyLoadout: null, story: null });
+const newProfile = (nick, color) => ({ nick, color, created: Date.now(), matches: 0, wins: 0, rounds: 0, kills: 0, bestLevel: 1, level: 1, xp: 0, last: 0, storyLoadout: null, story: null, achievements: [] });
 
 // ---------- Supabase (účet cez Google) - profil/postup prihláseného hráča sa zrkadlí aj do cloudu, nielen do localStorage ----------
 const SUPABASE_URL = 'https://axrplnzgqrltmabhljih.supabase.co';
@@ -333,6 +333,7 @@ function cloudProfileRowToLocal(row) {
     bestLevel: row.best_level || 1, level: row.level || 1, xp: row.xp || 0, last: row.last_played_at ? Date.parse(row.last_played_at) : 0,
     storyLoadout: row.story_loadout || null,
     story: { unlocked: clampInt(row.story_unlocked, 1, STORY_MISSIONS.length, 1), done: Array.isArray(row.story_done) ? row.story_done.map(Boolean) : [] },
+    achievements: Array.isArray(row.achievements) ? row.achievements.slice() : [],
   };
 }
 async function cloudFetchProfile(userId) {
@@ -347,6 +348,7 @@ function cloudPush() {   // write-through: po uložení lokálneho profilu potic
     best_level: p.bestLevel, level: p.level, xp: p.xp,
     last_played_at: p.last ? new Date(p.last).toISOString() : null,
     story_loadout: p.storyLoadout, story_unlocked: p.story ? p.story.unlocked : 1, story_done: p.story ? p.story.done : [],
+    achievements: Array.isArray(p.achievements) ? p.achievements : [],
   }).eq('id', cloudUser.id).then(({ error }) => { if (error) console.warn('Supabase sync zlyhal:', error.message); });
 }
 const hasRealProgress = p => !!p && (p.matches > 0 || (p.story && p.story.unlocked > 1) || p.storyLoadout);
@@ -419,6 +421,7 @@ function syncProfileLevel(t) {
   const p = Object.prototype.hasOwnProperty.call(profiles, key) ? profiles[key] : (profiles[key] = newProfile(t.nick, t.color));
   p.level = t.level; p.xp = t.xp; p.bestLevel = Math.max(p.bestLevel || 1, t.level); p.last = Date.now();
   saveProfiles();
+  checkAchievements(t.nick);
 }
 function recordStats(winner) {
   const done = [];
@@ -431,6 +434,7 @@ function recordStats(winner) {
     done.push(t.nick);
   });
   saveProfiles();
+  done.forEach(checkAchievements);
   return done;
 }
 function clampInt(v, a, b, d) { v = parseInt(v, 10); return isNaN(v) ? d : Math.max(a, Math.min(b, v)); }
@@ -726,6 +730,34 @@ function sphericalOffset(latDeg, lonDeg, bearingDeg, distDeg) {   // bod vo zvol
 function worldMissions(w) { return STORY_MISSIONS.map((m, i) => ({ m, i })).filter(({ m }) => missionWorld(m) === w); }   // {m,i} s GLOBÁLNYM indexom i (do story.progress)
 function worldLocalNum(i) { const w = missionWorld(STORY_MISSIONS[i]); return worldMissions(w).findIndex(x => x.i === i) + 1; }   // poradie misie v rámci jej planéty (1..20/10/10), nie globálny index
 function worldUnlocked(w) { const wm = worldMissions(w); return !wm.length || wm[0].i < story.progress.unlocked; }
+function profileWorldUnlocked(prof, w) { const wm = worldMissions(w); return !wm.length || wm[0].i < (prof.story ? prof.story.unlocked : 1); }   // rovnaké ako worldUnlocked(), ale pre ľubovoľný profil (nielen aktuálne zobrazenú kampaň)
+
+// ---------- odznaky (achievementy) - uložené v profile (profiles[key].achievements), zrkadlené aj do Supabase ako pri zvyšku profilu ----------
+const ACHIEVEMENTS = [
+  { id: 'prve_vitazstvo', icon: '🥇', title: 'Prvé víťazstvo', desc: 'Vyhraj svoj prvý zápas.', check: p => p.wins >= 1 },
+  { id: 'desiatka', icon: '🏅', title: 'Desiatka', desc: 'Vyhraj 10 zápasov.', check: p => p.wins >= 10 },
+  { id: 'veteran', icon: '🎖️', title: 'Veterán', desc: 'Odohraj 25 zápasov.', check: p => p.matches >= 25 },
+  { id: 'nicitel', icon: '💥', title: 'Ničiteľ', desc: 'Znič 50 nepriateľských tankov.', check: p => p.kills >= 50 },
+  { id: 'elitny_nicitel', icon: '☠️', title: 'Elitný ničiteľ', desc: 'Znič 200 nepriateľských tankov.', check: p => p.kills >= 200 },
+  { id: 'lv5', icon: '⭐', title: 'Hodnosť LV 5', desc: 'Dosiahni veliteľskú hodnosť 5.', check: p => (p.bestLevel || 1) >= 5 },
+  { id: 'lv10', icon: '🌟', title: 'Hodnosť LV 10', desc: 'Dosiahni veliteľskú hodnosť 10.', check: p => (p.bestLevel || 1) >= 10 },
+  { id: 'lv20', icon: '💫', title: 'Hodnosť LV 20', desc: 'Dosiahni veliteľskú hodnosť 20.', check: p => (p.bestLevel || 1) >= 20 },
+  { id: 'zem_dobyta', icon: '🌍', title: 'Zem dobytá', desc: 'Dokonči kampaň na Zemi.', check: p => profileWorldUnlocked(p, 'moon') },
+  { id: 'mesiac_dobyty', icon: '🌑', title: 'Mesiac dobytý', desc: 'Dokonči kampaň na Mesiaci.', check: p => profileWorldUnlocked(p, 'mars') },
+  { id: 'cela_kampan', icon: '🏆', title: 'Veliteľ slnečnej sústavy', desc: 'Dokonči celú kampaň - Zem, Mesiac aj Mars.', check: p => !!p.story && p.story.unlocked >= STORY_MISSIONS.length },
+  { id: 'vytrvalec', icon: '⏱️', title: 'Vytrvalec', desc: 'Odohraj 150 kôl.', check: p => p.rounds >= 150 },
+];
+function checkAchievements(nick) {   // zavolá sa po každej zmene štatistík - potichu odomkne nové odznaky a ukáže banner
+  if (!nick) return;
+  const p = profiles[nickKey(nick)]; if (!p) return;
+  if (!Array.isArray(p.achievements)) p.achievements = [];
+  const have = new Set(p.achievements), newly = [];
+  ACHIEVEMENTS.forEach(a => { if (!have.has(a.id) && a.check(p)) { p.achievements.push(a.id); have.add(a.id); newly.push(a); } });
+  if (newly.length) {
+    saveProfiles();
+    newly.forEach((a, i) => setTimeout(() => banner(a.icon + ' Nový odznak: ' + a.title, 3200), 1400 + i * 1900));
+  }
+}
 function globeMissionPts() {   // rozmiestnenie misií aktuálnej planéty podľa biómových "kontinentov", nie náhodne po guli
   const anchors = GLOBE_ANCHORS_BY_WORLD[GLOBE.world], perBiome = {};
   return worldMissions(GLOBE.world).map(({ m, i }) => {
@@ -2701,6 +2733,17 @@ $('homePlayBtn').addEventListener('click', () => { hide('home'); refreshContinue
 $('homeContBtn').addEventListener('click', () => { hide('home'); goFullscreen(); continueGame(); });
 $('homeSettingsBtn').addEventListener('click', () => { hide('home'); show('settings'); });
 $('homeCreditsBtn').addEventListener('click', () => { hide('home'); show('credits'); });
+$('homeAchBtn').addEventListener('click', () => { hide('home'); renderAchievements(); show('achievements'); });
+$('achBackBtn').addEventListener('click', () => { hide('achievements'); show('home'); });
+function renderAchievements() {
+  const nick = setup.players[0].nick, p = nick ? getProfile(nick) : null;
+  const have = new Set(p && Array.isArray(p.achievements) ? p.achievements : []);
+  $('achSummary').textContent = nick ? ('Odomknuté: ' + have.size + ' / ' + ACHIEVEMENTS.length) : 'Prihlás sa (alebo hraj ako hosť s uloženým postupom), nech sa ti odznaky začnú ukladať.';
+  $('achList').innerHTML = ACHIEVEMENTS.map(a => {
+    const on = have.has(a.id);
+    return '<div class="achRow' + (on ? ' on' : '') + '"><div class="achIcon">' + a.icon + '</div><div class="achBody"><div class="achTitle">' + esc(a.title) + '</div><div class="achDesc">' + esc(a.desc) + '</div></div><div class="achCheck">' + (on ? '✔' : '🔒') + '</div></div>';
+  }).join('');
+}
 $('homeLogoutBtn').addEventListener('click', () => {
   ask('Naozaj sa chceš odhlásiť?', () => {
     if (cloudUser && sb) { sb.auth.signOut(); }   // onAuthStateChange nižšie dorieši UI prepnutie na #login

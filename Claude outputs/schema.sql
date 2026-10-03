@@ -25,8 +25,14 @@ create table if not exists public.profiles (
 
   -- postup v kampani (rovnaký tvar ako story.progress: { unlocked, done })
   story_unlocked int not null default 1,
-  story_done     jsonb not null default '[]'::jsonb
+  story_done     jsonb not null default '[]'::jsonb,
+
+  -- zoznam id odomknutých odznakov (pozri ACHIEVEMENTS v game.js)
+  achievements   jsonb not null default '[]'::jsonb
 );
+
+-- pre existujúcu tabuľku (založenú pred pridaním odznakov) treba stĺpec doplniť - na novej inštalácii je už v create table vyššie, toto len pre istotu
+alter table public.profiles add column if not exists achievements jsonb not null default '[]'::jsonb;
 
 -- rýchle vyhľadanie podľa prezývky (case-insensitive, rovnako ako nickKey() v game.js)
 create unique index if not exists profiles_nick_lower_idx on public.profiles (lower(nick));
