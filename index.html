@@ -336,6 +336,7 @@
     <div class="logoBadge"><svg><use href="#ironIcon"/></svg></div>
     <h1>IRON DUEL <span>: TANK COMMANDERS</span></h1>
     <p id="homeGreet"></p>
+    <button class="btn" id="homeImportBtn" style="display:none;width:100%;margin:-2px 0 10px;animation:waitPulse 1.8s ease-in-out infinite"></button>
     <div class="homeRow">
       <button class="btn" id="homePlayBtn">▶ Hrať teraz</button>
       <button class="btn alt" id="homeContBtn" style="display:none"></button>
@@ -526,4 +527,4 @@
     window.__firestoreDb = firebase.firestore();
   } catch (_) { /* mimo web hostingu (napr. Claude Artifact) - použije sa záložné window.claude db */ }
 </script>
-<script src="game.js?v=7"></script>
+<script src="game.js?v=8"></script>

@@ -352,6 +352,7 @@ function cloudPush() {   // write-through: po uložení lokálneho profilu potic
   }).eq('id', cloudUser.id).then(({ error }) => { if (error) console.warn('Supabase sync zlyhal:', error.message); });
 }
 const hasRealProgress = p => !!p && (p.matches > 0 || (p.story && p.story.unlocked > 1) || p.storyLoadout);
+const progressScore = p => !p ? -1 : (p.story ? p.story.unlocked : 1) * 1000000 + (p.matches || 0) * 1000 + (p.kills || 0);   // na porovnanie "koľko postupu" má profil - kto má viac, ten je lepší kandidát na import
 function findMigratableLocalProfile(excludeKey) {   // nájde lokálny (hosťovský) profil v tomto prehliadači s najväčším postupom - na migráciu do čerstvého Google účtu
   let best = null;
   for (const k in profiles) {
@@ -2713,12 +2714,23 @@ function renderLogin() { $('loginMsg').textContent = loginError || ''; }
 function enterHome() {
   hide('login'); refreshContinue(); renderHome(); show('home');
 }
+let importCandidateNick = null;   // keď je hráč prihlásený cez Google a v TOMTO zariadení existuje iný (hosťovský) profil s väčším postupom - jeho meno, nech ho ponúkneme na ručný import do cloud účtu
 function renderHome() {
   const nick = setup.players[0].nick, prof = nick ? getProfile(nick) : null;
   $('homeGreet').textContent = nick ? ((cloudUser ? 'Prihlásený cez Google ako ' : 'Hráš ako ') + nick + (prof ? ' · veliteľská hodnosť LV ' + (prof.level || 1) : '')) : '';
   const sv = readSave();
   $('homeContBtn').style.display = sv ? '' : 'none';
   if (sv) $('homeContBtn').textContent = '▶ Pokračovať: kolo ' + sv.round + ' · ' + sv.players.length + ' hráči';
+  importCandidateNick = null;
+  const importBtn = $('homeImportBtn');
+  if (cloudUser) {
+    const cand = findMigratableLocalProfile(nickKey(cloudUser.nick));
+    if (cand && hasRealProgress(cand) && progressScore(cand) > progressScore(prof)) {
+      importCandidateNick = cand.nick;
+      importBtn.textContent = '⬇️ Načítať postup "' + cand.nick + '" (LV ' + (cand.level || 1) + ') z tohto zariadenia';
+      importBtn.style.display = '';
+    } else importBtn.style.display = 'none';
+  } else importBtn.style.display = 'none';
 }
 $('googleLoginBtn').addEventListener('click', () => {
   if (!sb) { loginError = 'Prihlásenie cez Google momentálne nie je dostupné (skontroluj internetové pripojenie).'; renderLogin(); return; }
@@ -2735,6 +2747,21 @@ $('homeSettingsBtn').addEventListener('click', () => { hide('home'); show('setti
 $('homeCreditsBtn').addEventListener('click', () => { hide('home'); show('credits'); });
 $('homeAchBtn').addEventListener('click', () => { hide('home'); renderAchievements(); show('achievements'); });
 $('achBackBtn').addEventListener('click', () => { hide('achievements'); show('home'); });
+$('homeImportBtn').addEventListener('click', () => {
+  if (!importCandidateNick || !cloudUser) return;
+  const cand = getProfile(importCandidateNick);
+  if (!cand) return;
+  ask('Načítať postup "' + importCandidateNick + '" (LV ' + (cand.level || 1) + ') z tohto zariadenia do tvojho Google účtu? Doterajší postup v cloude (na iných zariadeniach) sa tým prepíše.', () => {
+    const key = nickKey(cloudUser.nick);
+    const cur = profiles[key];
+    profiles[key] = Object.assign({}, cand, { nick: cloudUser.nick, color: (cur && isColor(cur.color)) ? cur.color : cand.color });
+    saveProfiles();   // uloží lokálne a (cloudPush vo vnútri) pretlačí do Supabase, teda aj na ostatné zariadenia
+    setup.players[0].nick = cloudUser.nick; setup.players[0].name = cloudUser.nick; saveSetup();
+    refreshStoryProgressSource();
+    renderHome();
+    banner('✅ Postup z tohto zariadenia bol načítaný do tvojho účtu', 3200);
+  });
+});
 function renderAchievements() {
   const nick = setup.players[0].nick, p = nick ? getProfile(nick) : null;
   const have = new Set(p && Array.isArray(p.achievements) ? p.achievements : []);
