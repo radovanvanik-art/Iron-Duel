@@ -317,7 +317,7 @@ const NICK_RE = /^[\p{L}\p{N}][\p{L}\p{N} _.\-]{1,13}$/u;
 let profiles = {};
 try { const v = JSON.parse(localStorage.getItem(PROF_KEY)); if (v && typeof v === 'object' && !Array.isArray(v)) profiles = v; } catch (_) {}
 const nickKey = str => 'n_' + str.trim().toLowerCase();      // predpona chráni pred kľúčmi ako __proto__
-const newProfile = (nick, color) => ({ nick, color, created: Date.now(), matches: 0, wins: 0, rounds: 0, kills: 0, bestLevel: 1, level: 1, xp: 0, last: 0, storyLoadout: null });
+const newProfile = (nick, color) => ({ nick, color, created: Date.now(), matches: 0, wins: 0, rounds: 0, kills: 0, bestLevel: 1, level: 1, xp: 0, last: 0, storyLoadout: null, story: null });
 // ---------- výbava v kampani (munícia a vylepšenia, ktoré hráč neminul, prenesené do ďalšej misie) ----------
 function storyLoadoutSnapshot(t) {
   return {
@@ -564,16 +564,35 @@ const STORY_MISSIONS = [
     win: 'Overlord Thessarax je porazený! Zem, Mesiac aj Mars sú slobodné. Si najlepší tankový veliteľ celej slnečnej sústavy.',
     lose: 'Aj overlordi sa dajú poraziť. Nabudúce to dokážeš, veliteľ – pre celú slnečnú sústavu.' },
 ];
-const STORY_KEY = 'ironDuelStory_v4';   // v4: kampaň rozšírená na slnečnú sústavu (Zem 20 + Mesiac 10 + Mars 10 = 40 misií), staré indexy by sa nezhodovali
-let story = { active: false, idx: null, progress: { unlocked: 1, done: [] } };
-try {
-  const v = JSON.parse(localStorage.getItem(STORY_KEY));
-  if (v && typeof v === 'object') {
-    story.progress.unlocked = clampInt(v.unlocked, 1, STORY_MISSIONS.length, 1);
-    story.progress.done = Array.isArray(v.done) ? v.done.map(Boolean) : [];
-  }
-} catch (_) {}
-function saveStoryProgress() { try { localStorage.setItem(STORY_KEY, JSON.stringify(story.progress)); } catch (_) {} }
+// POZOR pre budúce úpravy kampane: postup prihláseného hráča sa odteraz ukladá v jeho PROFILE (PROF_KEY), nie pod touto
+// verziovanou kľúčou - takže ho pridávanie/úprava misií už nevymaže. Nové misie preto VŽDY len PRIPÁJAJ na koniec zoznamu
+// danej planéty (alebo pridaj celú novú planétu na koniec) - nikdy nevkladaj ani neprehadzuj misie v strede existujúceho
+// zoznamu, lebo uložené indexy "unlocked"/"done" by sa už nezhodovali so starými misiami.
+const STORY_KEY = 'ironDuelStory_v4';   // už len záložné/hosťovské úložisko (nie je prihlásený nikto) a jednorazový zdroj pri migrácii do profilu
+function defaultStoryProgress() { return { unlocked: 1, done: [] }; }
+function loadLegacyGlobalStoryProgress() {
+  try {
+    const v = JSON.parse(localStorage.getItem(STORY_KEY));
+    if (v && typeof v === 'object') return { unlocked: clampInt(v.unlocked, 1, STORY_MISSIONS.length, 1), done: Array.isArray(v.done) ? v.done.map(Boolean) : [] };
+  } catch (_) {}
+  return null;
+}
+function storyProgressForNick(nick) {   // postup kampane patrí k profilu prezývky - prežije aj moje budúce zásahy do kampane
+  const key = nickKey(nick);
+  const p = Object.prototype.hasOwnProperty.call(profiles, key) ? profiles[key] : (profiles[key] = newProfile(nick, PALETTE[0]));
+  if (!p.story) { p.story = loadLegacyGlobalStoryProgress() || defaultStoryProgress(); saveProfiles(); }   // jednorazová migrácia starého spoločného postupu
+  return p.story;
+}
+let story = { active: false, idx: null, progress: null };
+function refreshStoryProgressSource() {   // volať vždy po zmene prihlásenia hráča v slote 0 - kampaň patrí aktuálne prihlásenému hráčovi
+  const nick = setup.players[0].nick;
+  story.progress = nick ? storyProgressForNick(nick) : (loadLegacyGlobalStoryProgress() || defaultStoryProgress());
+}
+refreshStoryProgressSource();
+function saveStoryProgress() {
+  if (setup.players[0].nick) { saveProfiles(); return; }   // story.progress JE priamo profiles[key].story
+  try { localStorage.setItem(STORY_KEY, JSON.stringify(story.progress)); } catch (_) {}
+}
 function startStoryMission(idx) {
   const m = STORY_MISSIONS[idx];
   if (!m || idx >= story.progress.unlocked) return;
@@ -2597,6 +2616,7 @@ $('creditsBackBtn').addEventListener('click', () => { hide('credits'); show('hom
 function renderLogin() { $('loginMsg').textContent = slotMsg[0] || ''; }
 function doLogin() {
   loginSlot(0, $('loginNick').value);
+  refreshStoryProgressSource();
   if (setup.players[0].nick) { enterHome(); } else { renderLogin(); }
 }
 function enterHome() {
@@ -2617,7 +2637,7 @@ $('homeContBtn').addEventListener('click', () => { hide('home'); goFullscreen();
 $('homeSettingsBtn').addEventListener('click', () => { hide('home'); show('settings'); });
 $('homeCreditsBtn').addEventListener('click', () => { hide('home'); show('credits'); });
 $('homeLogoutBtn').addEventListener('click', () => {
-  ask('Naozaj sa chceš odhlásiť?', () => { logoutSlot(0); hide('home'); renderLogin(); show('login'); });
+  ask('Naozaj sa chceš odhlásiť?', () => { logoutSlot(0); refreshStoryProgressSource(); hide('home'); renderLogin(); show('login'); });
 });
 $('pauseBtn').addEventListener('click', () => setPause(true));
 $('resumeBtn').addEventListener('click', () => setPause(false));
@@ -2657,7 +2677,9 @@ function loginSlot(i, text) {
 function logoutSlot(i) { setup.players[i].nick = null; slotMsg[i] = ''; saveSetup(); renderSetup(); }
 function renderSetup() {
   fixColors();
+  const slot0nick = setup.players[0].nick;
   setup.players.forEach(p => { if (p.nick && !getProfile(p.nick)) p.nick = null; });   // profil bol zmazaný
+  if (setup.players[0].nick !== slot0nick) refreshStoryProgressSource();
   $('nickList').innerHTML = Object.values(profiles).map(p => '<option value="' + esc(p.nick) + '">').join('');
   const n = net.active ? net.maxN : setup.n, guestLocked = net.active && net.myIdx !== 0;
   $('nBtns').innerHTML = [2, 3, 4].map(k => '<button class="nb' + (n === k ? ' on' : '') + '"' + (guestLocked ? ' disabled' : '') + ' data-n="' + k + '">' + k + ' hráči</button>').join('');
@@ -2932,8 +2954,8 @@ document.querySelectorAll('.menuBg').forEach(el => {
   img.onerror = () => { el.innerHTML = MENU_BG_SVG; };   // AI podklad sa nenačítal - záložné ručné SVG pozadie
   img.src = 'assets/menu-bg.jpg';
 });
-if (setup.players[0].nick && getProfile(setup.players[0].nick)) { hide('login'); renderHome(); show('home'); }
-else { setup.players[0].nick = null; renderLogin(); }
+if (setup.players[0].nick && getProfile(setup.players[0].nick)) { refreshStoryProgressSource(); hide('login'); renderHome(); show('home'); }
+else { setup.players[0].nick = null; refreshStoryProgressSource(); renderLogin(); }
 let last = performance.now(), slowMs = 0;
 function loop(now) {
   const raw = Math.min(now - last, 100), dt = Math.min(0.033, raw / 1000); last = now;
