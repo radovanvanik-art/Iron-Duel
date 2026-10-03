@@ -504,12 +504,35 @@ function storyMissionSub(m) {
 }
 // ---------- 3D zemeguľa kampane (ťahaním otáčateľná, ukazuje aj uzamknuté levely) ----------
 const GLOBE = { yaw: .6, pitch: -.25, vYaw: .08, vPitch: 0, zoom: 1, dragging: false, autoSpin: true, raf: null, canvas: null, ctx: null, pins: [], W: 0, H: 0, R: 0, stars: null };
-function globeMissionPts() {   // rozmiestnenie misií po guli podľa zlatého uhla (rovnomerné, bez zhlukov)
-  const N = STORY_MISSIONS.length;
+// kontinenty podľa biómu, nech sú misie rovnakého terénu zoskupené na vlastnej časti glóbusu (zima = polárna oblasť, atď.)
+const GLOBE_ANCHORS = {
+  winter:    { lat: 80, lon: 20,   r: 34 },   // polárna ľadová oblasť
+  mountains: { lat: 18, lon: 108,  r: 30 },
+  desert:    { lat: -6, lon: -58,  r: 27 },
+  ruins:     { lat: 42, lon: -98,  r: 24 },
+  canyon:    { lat: -34, lon: 158, r: 25 },
+  beach:     { lat: 4,  lon: 172,  r: 22 },
+  volcano:   { lat: -58, lon: -18, r: 25 },   // juh, "ohnivý kruh"
+  forest:    { lat: 50, lon: -42,  r: 21 },
+  swamp:     { lat: -15, lon: 62,  r: 20 },
+  meadow:    { lat: 26, lon: -160, r: 20 },
+};
+function hash2(a, b) { const s = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453; return s - Math.floor(s); }
+function sphericalOffset(latDeg, lonDeg, bearingDeg, distDeg) {   // bod vo zvolenej vzdialenosti/smere od kotvy (veľkokruh)
+  const lat0 = latDeg * Math.PI / 180, lon0 = lonDeg * Math.PI / 180, br = bearingDeg * Math.PI / 180, d = distDeg * Math.PI / 180;
+  const lat = Math.asin(Math.sin(lat0) * Math.cos(d) + Math.cos(lat0) * Math.sin(d) * Math.cos(br));
+  const lon = lon0 + Math.atan2(Math.sin(br) * Math.sin(d) * Math.cos(lat0), Math.cos(d) - Math.sin(lat0) * Math.sin(lat));
+  return { lat: lat * 180 / Math.PI, lon: lon * 180 / Math.PI };
+}
+function globeMissionPts() {   // rozmiestnenie misií podľa biómových "kontinentov", nie náhodne po guli
+  const perBiome = {};
   return STORY_MISSIONS.map((m, i) => {
-    const lat = N <= 1 ? 0 : 68 - 136 * i / (N - 1);
-    const lon = (i * 137.508) % 360;
-    return { m, i, lat: lat * Math.PI / 180, lon: lon * Math.PI / 180 };
+    const key = GLOBE_ANCHORS[m.terrain] ? m.terrain : 'meadow', a = GLOBE_ANCHORS[key];
+    const j = perBiome[key] = (perBiome[key] || 0);
+    perBiome[key]++;
+    const bearing = (j * 137.508) % 360, dist = a.r * (j === 0 ? 0.08 : 0.42);
+    const pos = sphericalOffset(a.lat, a.lon, bearing, dist);
+    return { m, i, lat: pos.lat * Math.PI / 180, lon: pos.lon * Math.PI / 180 };
   });
 }
 function globeRotate(p) {   // premietne bod gule (lat/lon) do rotovaného 3D priestoru (yaw okolo Y, potom pitch okolo X)
@@ -518,16 +541,37 @@ function globeRotate(p) {   // premietne bod gule (lat/lon) do rotovaného 3D pr
   const cp = Math.cos(GLOBE.pitch), sp = Math.sin(GLOBE.pitch);
   return { x, y: y0 * cp - z0 * sp, z: y0 * sp + z0 * cp };
 }
-function globeResize() {
-  const wrap = $('globeWrap'); if (!wrap || !GLOBE.canvas) return;
-  const r = wrap.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
-  GLOBE.W = Math.max(1, Math.round(r.width)); GLOBE.H = Math.max(1, Math.round(r.height));
-  GLOBE.canvas.width = GLOBE.W * dpr; GLOBE.canvas.height = GLOBE.H * dpr;
-  GLOBE.canvas.style.width = GLOBE.W + 'px'; GLOBE.canvas.style.height = GLOBE.H + 'px';
-  GLOBE.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  GLOBE.R = Math.min(GLOBE.W, GLOBE.H) * .38 * GLOBE.zoom;
-  if (!GLOBE.stars) GLOBE.stars = Array.from({ length: 140 }, () => ({ x: Math.random(), y: Math.random(), r: Math.random() * 1.4 + .3, a: Math.random() * .6 + .3 }));
+function globeTerrainAt(latDeg, lonDeg) {   // ktorý biómový "kontinent" (ak žiadny, oceán), s roztrhaným pobrežím cez šum
+  let best = null, bestRatio = Infinity;
+  for (const key in GLOBE_ANCHORS) {
+    const a = GLOBE_ANCHORS[key];
+    let dLon = Math.abs(lonDeg - a.lon); if (dLon > 180) dLon = 360 - dLon;
+    const dLat = latDeg - a.lat, ang = Math.sqrt(dLat * dLat + dLon * dLon * Math.pow(Math.cos(latDeg * Math.PI / 180), 2));
+    const jag = 0.78 + 0.4 * hash2(Math.round(latDeg / 6), Math.round(lonDeg / 6));
+    const ratio = ang / (a.r * jag);
+    if (ratio < bestRatio) { bestRatio = ratio; best = key; }
+  }
+  return bestRatio <= 1 ? best : null;
 }
+const GLOBE_CELL_CACHE = new Map();
+function globeCellColor(latDeg, lonDeg) {
+  const ck = Math.round(latDeg) + ',' + Math.round(lonDeg);
+  if (GLOBE_CELL_CACHE.has(ck)) return GLOBE_CELL_CACHE.get(ck);
+  const key = globeTerrainAt(latDeg, lonDeg);
+  const n = hash2(Math.round(latDeg / 3), Math.round(lonDeg / 3));
+  let col;
+  if (key) {
+    const g = BIOMES[key].ground;
+    col = n > .66 ? g[0] : n > .33 ? g[1] : g[2];
+  } else {
+    const depth = .35 + .5 * hash2(Math.round(latDeg / 5) + 50, Math.round(lonDeg / 5) + 50);
+    col = depth > .6 ? '#123a68' : depth > .35 ? '#0c2a50' : '#081c38';
+  }
+  if (Math.abs(latDeg) > 80) col = n > .5 ? '#eef6ff' : '#dcebfb';   // trvalé ľadové čiapky na póloch
+  GLOBE_CELL_CACHE.set(ck, col);
+  return col;
+}
+function hex2rgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
 function drawGlobe() {
   const ctx = GLOBE.ctx; if (!ctx || !GLOBE.W) return;
   const cx = GLOBE.W / 2, cy = GLOBE.H / 2, R = GLOBE.R;
@@ -538,24 +582,36 @@ function drawGlobe() {
   const glow = ctx.createRadialGradient(cx, cy, R * .92, cx, cy, R * 1.3);
   glow.addColorStop(0, 'rgba(90,155,255,.35)'); glow.addColorStop(1, 'rgba(90,155,255,0)');
   ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(cx, cy, R * 1.3, 0, 7); ctx.fill();
-  const body = ctx.createRadialGradient(cx - R * .35, cy - R * .4, R * .1, cx, cy, R * 1.05);
-  body.addColorStop(0, '#345498'); body.addColorStop(.55, '#152a52'); body.addColorStop(1, '#060c20');
-  ctx.fillStyle = body; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.fill();
-  ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,.1)';
-  for (let g = 0; g < 12; g++) {   // poludníky
+  ctx.save();   // orezanie na kruh gule, nech sú rohy políčok terénu čisté
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.clip();
+  ctx.fillStyle = '#081634'; ctx.fillRect(cx - R, cy - R, R * 2, R * 2);
+  const latStep = 9;
+  for (let la = -90 + latStep / 2; la < 90; la += latStep) {
+    const lonN = Math.max(8, Math.round(36 * Math.cos(la * Math.PI / 180)));
+    const lonStep = 360 / lonN;
+    for (let lo = -180 + lonStep / 2; lo < 180; lo += lonStep) {
+      const corners = [
+        { lat: (la - latStep / 2) * Math.PI / 180, lon: (lo - lonStep / 2) * Math.PI / 180 },
+        { lat: (la - latStep / 2) * Math.PI / 180, lon: (lo + lonStep / 2) * Math.PI / 180 },
+        { lat: (la + latStep / 2) * Math.PI / 180, lon: (lo + lonStep / 2) * Math.PI / 180 },
+        { lat: (la + latStep / 2) * Math.PI / 180, lon: (lo - lonStep / 2) * Math.PI / 180 },
+      ].map(globeRotate);
+      const avgZ = (corners[0].z + corners[1].z + corners[2].z + corners[3].z) / 4;
+      if (avgZ < -.04) continue;
+      const col = hex2rgb(globeCellColor(la, lo));
+      const light = Math.max(.42, Math.min(1.08, .55 + avgZ * .55));
+      ctx.fillStyle = 'rgb(' + Math.min(255, col[0] * light | 0) + ',' + Math.min(255, col[1] * light | 0) + ',' + Math.min(255, col[2] * light | 0) + ')';
+      ctx.beginPath();
+      ctx.moveTo(cx + corners[0].x * R, cy - corners[0].y * R);
+      for (let k = 1; k < 4; k++) ctx.lineTo(cx + corners[k].x * R, cy - corners[k].y * R);
+      ctx.closePath(); ctx.fill();
+    }
+  }
+  ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(10,16,32,.18)';
+  for (let g = 0; g < 12; g++) {   // poludníky (jemné, len na odlíšenie zakrivenia)
     const lon0 = g * Math.PI / 6; ctx.beginPath(); let on = false;
     for (let la = -90; la <= 90; la += 4) {
       const p = globeRotate({ lat: la * Math.PI / 180, lon: lon0 });
-      if (p.z < -.08) { on = false; continue; }
-      const x = cx + p.x * R, y = cy - p.y * R;
-      on ? ctx.lineTo(x, y) : (ctx.moveTo(x, y), on = true);
-    }
-    ctx.stroke();
-  }
-  for (let la = -60; la <= 60; la += 30) {   // rovnobežky
-    ctx.beginPath(); let on = false;
-    for (let lo = 0; lo <= 360; lo += 4) {
-      const p = globeRotate({ lat: la * Math.PI / 180, lon: lo * Math.PI / 180 });
       if (p.z < -.08) { on = false; continue; }
       const x = cx + p.x * R, y = cy - p.y * R;
       on ? ctx.lineTo(x, y) : (ctx.moveTo(x, y), on = true);
@@ -575,9 +631,13 @@ function drawGlobe() {
     ctx.quadraticCurveTo(cx + mx * R * 1.08, cy - my * R * 1.08, cx + b.x * R, cy - b.y * R);
     ctx.stroke();
   }
+  ctx.restore();
   const sheen = ctx.createRadialGradient(cx - R * .4, cy - R * .45, 0, cx - R * .4, cy - R * .45, R * 1.1);
-  sheen.addColorStop(0, 'rgba(255,255,255,.18)'); sheen.addColorStop(1, 'rgba(255,255,255,0)');
+  sheen.addColorStop(0, 'rgba(255,255,255,.22)'); sheen.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = sheen; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.fill();
+  const rim = ctx.createRadialGradient(cx, cy, R * .88, cx, cy, R);
+  rim.addColorStop(0, 'rgba(0,0,0,0)'); rim.addColorStop(1, 'rgba(0,0,0,.35)');
+  ctx.fillStyle = rim; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.fill();
 }
 function layoutGlobePins() {
   const cx = GLOBE.W / 2, cy = GLOBE.H / 2, R = GLOBE.R;
