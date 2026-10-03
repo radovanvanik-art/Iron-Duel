@@ -308,7 +308,33 @@ const NICK_RE = /^[\p{L}\p{N}][\p{L}\p{N} _.\-]{1,13}$/u;
 let profiles = {};
 try { const v = JSON.parse(localStorage.getItem(PROF_KEY)); if (v && typeof v === 'object' && !Array.isArray(v)) profiles = v; } catch (_) {}
 const nickKey = str => 'n_' + str.trim().toLowerCase();      // predpona chráni pred kľúčmi ako __proto__
-const newProfile = (nick, color) => ({ nick, color, created: Date.now(), matches: 0, wins: 0, rounds: 0, kills: 0, bestLevel: 1, level: 1, xp: 0, last: 0 });
+const newProfile = (nick, color) => ({ nick, color, created: Date.now(), matches: 0, wins: 0, rounds: 0, kills: 0, bestLevel: 1, level: 1, xp: 0, last: 0, storyLoadout: null });
+// ---------- výbava v kampani (munícia a vylepšenia, ktoré hráč neminul, prenesené do ďalšej misie) ----------
+function storyLoadoutSnapshot(t) {
+  return {
+    money: t.money,
+    ammo: Object.fromEntries(ORDER.filter(k => k !== 'ap').map(k => [k, t.ammo[k] === Infinity ? 0 : t.ammo[k]])),
+    speedLvl: t.speedLvl, armorLvl: t.armorLvl, fuelLvl: t.fuelLvl,
+    wlv: Object.assign({}, t.wlv), shields: t.shields.slice(),
+  };
+}
+function applyStoryLoadout(t, lo) {
+  if (!lo) return;
+  t.money += lo.money || 0;
+  if (lo.ammo) ORDER.forEach(k => { if (k !== 'ap' && typeof lo.ammo[k] === 'number') t.ammo[k] = Math.min(capOf(k), Math.max(t.ammo[k] || 0, lo.ammo[k])); });
+  t.speedLvl = Math.max(t.speedLvl, clampInt(lo.speedLvl, 0, 3, 0));
+  t.armorLvl = Math.max(t.armorLvl, clampInt(lo.armorLvl, 0, 10, 0));
+  t.fuelLvl = Math.max(t.fuelLvl, clampInt(lo.fuelLvl, 0, 4, 0));
+  if (lo.wlv) WLV_IDS.forEach(k => { t.wlv[k] = Math.max(t.wlv[k] || 0, clampInt(lo.wlv[k], 0, WLV_MAX, 0)); });
+  if (Array.isArray(lo.shields)) for (let i = 0; i < t.shields.length; i++) t.shields[i] = Math.max(t.shields[i], clampInt(lo.shields[i], 0, SHIELD_CAP, 0));
+}
+function saveStoryLoadout(t) {
+  if (!t.nick) return;
+  const key = nickKey(t.nick);
+  const p = Object.prototype.hasOwnProperty.call(profiles, key) ? profiles[key] : (profiles[key] = newProfile(t.nick, t.color));
+  p.storyLoadout = storyLoadoutSnapshot(t);
+  saveProfiles();
+}
 function saveProfiles() { try { localStorage.setItem(PROF_KEY, JSON.stringify(profiles)); } catch (_) {} }
 const getProfile = nick => (nick && Object.prototype.hasOwnProperty.call(profiles, nickKey(nick))) ? profiles[nickKey(nick)] : null;
 const statsLine = p => 'Zápasy ' + p.matches + ' · Výhry ' + p.wins + (p.matches ? ' (' + Math.round(100 * p.wins / p.matches) + ' %)' : '') +
@@ -465,6 +491,8 @@ function startStoryMission(idx) {
   });
   tanks = [makeTank(0, human), ...botCfgs.map((p, i) => makeTank(i + 1, p))];
   tanks.forEach(t => t.money = m.money);
+  const prof = human.nick ? getProfile(human.nick) : null;   // munícia a vylepšenia, ktoré hráč neminul v predošlej misii, pokračujú aj sem
+  if (prof && prof.storyLoadout) applyStoryLoadout(tanks[0], prof.storyLoadout);
   round = 1; lastResult = '';
   buildPads(); enterShop();
   $('shopTitle').textContent = 'Misia ' + (idx + 1) + ': ' + m.title + ' · ' + biome().icon + ' ' + biome().name;
@@ -1093,7 +1121,7 @@ function afterRoundEnd() {
     $('endNormalBtns').style.display = ''; $('endStoryBtns').style.display = 'none';
     if (story.active) {
       const m = STORY_MISSIONS[story.idx], won = w === tanks[0];
-      if (won) { story.progress.unlocked = Math.max(story.progress.unlocked, story.idx + 2); story.progress.done[story.idx] = true; saveStoryProgress(); }
+      if (won) { story.progress.unlocked = Math.max(story.progress.unlocked, story.idx + 2); story.progress.done[story.idx] = true; saveStoryProgress(); saveStoryLoadout(tanks[0]); }
       recordStats(w);   // misie v kampani sa teraz tiež počítajú do štatistík profilu (zápasy/výhry/kolá)
       $('endTitle').textContent = won ? 'Misia splnená!' : 'Misia zlyhala';
       $('endTitle').style.color = won ? '#5fd35f' : '#e5484d';
