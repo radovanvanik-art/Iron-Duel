@@ -478,6 +478,7 @@ function saveStoryProgress() { try { localStorage.setItem(STORY_KEY, JSON.string
 function startStoryMission(idx) {
   const m = STORY_MISSIONS[idx];
   if (!m || idx >= story.progress.unlocked) return;
+  stopGlobeLoop();
   hide('story'); hide('dialog'); hide('menu'); hide('end');
   initAudio(); fixColors(); saveSetup();
   setup.terrain = m.terrain; WIN_ROUNDS = m.rounds;
@@ -497,61 +498,164 @@ function startStoryMission(idx) {
   buildPads(); enterShop();
   $('shopTitle').textContent = 'Misia ' + (idx + 1) + ': ' + m.title + ' · ' + biome().icon + ' ' + biome().name;
 }
-function catmullRomPath(pts) {   // hladká krivka cez body (pre vinúcu sa cestu na mape kampane)
-  if (pts.length < 2) return '';
-  let d = 'M' + pts[0].x + ' ' + pts[0].y;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
-    const c1x = p1.x + (p2.x - p0.x) / 6, c1y = p1.y + (p2.y - p0.y) / 6;
-    const c2x = p2.x - (p3.x - p1.x) / 6, c2y = p2.y - (p3.y - p1.y) / 6;
-    d += ' C' + c1x + ' ' + c1y + ',' + c2x + ' ' + c2y + ',' + p2.x + ' ' + p2.y;
-  }
-  return d;
-}
 function storyMissionSub(m) {
   const B = BIOMES[m.terrain];
   return B.icon + ' ' + B.name + ' · ' + (m.bots.length > 1 ? ('Boss · ' + m.bots.length + ' súperi') : ('PC ' + ['', 'ľahký', 'stredný', 'ťažký'][m.bots[0].lvl])) + ' · do ' + m.rounds + ' ' + (m.rounds === 1 ? 'víťazstva' : 'víťazstiev');
 }
-function renderStoryList() {
+// ---------- 3D zemeguľa kampane (ťahaním otáčateľná, ukazuje aj uzamknuté levely) ----------
+const GLOBE = { yaw: .6, pitch: -.25, vYaw: .08, vPitch: 0, zoom: 1, dragging: false, autoSpin: true, raf: null, canvas: null, ctx: null, pins: [], W: 0, H: 0, R: 0, stars: null };
+function globeMissionPts() {   // rozmiestnenie misií po guli podľa zlatého uhla (rovnomerné, bez zhlukov)
   const N = STORY_MISSIONS.length;
-  const cols = Math.min(4, N), rows = Math.ceil(N / cols);
-  const VW = 1000, marginX = 110, rowH = 230, topPad = 130, waveAmp = 60;
-  const VH = topPad * 2 + (rows - 1) * rowH;
-  const pts = STORY_MISSIONS.map((m, i) => {   // hadovitá mriežka (viac riadkov) namiesto jedného stiesneného pásu
-    const row = Math.floor(i / cols), posInRow = i - row * cols, itemsInRow = Math.min(cols, N - row * cols);
-    const offset = (cols - itemsInRow) / 2;   // vycentruje neúplný posledný riadok
-    const colIdx = row % 2 === 0 ? offset + posInRow : cols - 1 - offset - posInRow;
-    const x = cols > 1 ? marginX + colIdx * (VW - 2 * marginX) / (cols - 1) : VW / 2;
-    const y = topPad + row * rowH + (Math.round(colIdx) % 2 === 0 ? -waveAmp : waveAmp);
-    return { x, y, m, i };
+  return STORY_MISSIONS.map((m, i) => {
+    const lat = N <= 1 ? 0 : 68 - 136 * i / (N - 1);
+    const lon = (i * 137.508) % 360;
+    return { m, i, lat: lat * Math.PI / 180, lon: lon * Math.PI / 180 };
   });
-  const pathD = catmullRomPath(pts);
-  const zones = pts.map(p => {
-    const B = BIOMES[p.m.terrain];
-    return '<radialGradient id="zg' + p.i + '" cx="50%" cy="50%" r="50%">' +
-      '<stop offset="0" stop-color="' + B.edge + '" stop-opacity=".35"/><stop offset="1" stop-color="' + B.edge + '" stop-opacity="0"/></radialGradient>';
-  }).join('');
-  const glows = pts.map(p => '<circle cx="' + p.x + '" cy="' + p.y + '" r="110" fill="url(#zg' + p.i + ')"/>').join('');
-  const svg = '<svg viewBox="0 0 ' + VW + ' ' + VH + '" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">' +
-    '<defs>' + zones + '</defs>' + glows +
-    '<path d="' + pathD + '" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="7" stroke-linecap="round"/>' +
-    '<path d="' + pathD + '" fill="none" stroke="rgba(255,213,74,.55)" stroke-width="3" stroke-linecap="round" stroke-dasharray="2 14"/>' +
-    '</svg>';
-  const pins = pts.map(p => {
+}
+function globeRotate(p) {   // premietne bod gule (lat/lon) do rotovaného 3D priestoru (yaw okolo Y, potom pitch okolo X)
+  const x = Math.cos(p.lat) * Math.sin(p.lon + GLOBE.yaw);
+  const y0 = Math.sin(p.lat), z0 = Math.cos(p.lat) * Math.cos(p.lon + GLOBE.yaw);
+  const cp = Math.cos(GLOBE.pitch), sp = Math.sin(GLOBE.pitch);
+  return { x, y: y0 * cp - z0 * sp, z: y0 * sp + z0 * cp };
+}
+function globeResize() {
+  const wrap = $('globeWrap'); if (!wrap || !GLOBE.canvas) return;
+  const r = wrap.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
+  GLOBE.W = Math.max(1, Math.round(r.width)); GLOBE.H = Math.max(1, Math.round(r.height));
+  GLOBE.canvas.width = GLOBE.W * dpr; GLOBE.canvas.height = GLOBE.H * dpr;
+  GLOBE.canvas.style.width = GLOBE.W + 'px'; GLOBE.canvas.style.height = GLOBE.H + 'px';
+  GLOBE.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  GLOBE.R = Math.min(GLOBE.W, GLOBE.H) * .38 * GLOBE.zoom;
+  if (!GLOBE.stars) GLOBE.stars = Array.from({ length: 140 }, () => ({ x: Math.random(), y: Math.random(), r: Math.random() * 1.4 + .3, a: Math.random() * .6 + .3 }));
+}
+function drawGlobe() {
+  const ctx = GLOBE.ctx; if (!ctx || !GLOBE.W) return;
+  const cx = GLOBE.W / 2, cy = GLOBE.H / 2, R = GLOBE.R;
+  ctx.clearRect(0, 0, GLOBE.W, GLOBE.H);
+  ctx.save();
+  GLOBE.stars.forEach(s => { ctx.globalAlpha = s.a; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(s.x * GLOBE.W, s.y * GLOBE.H, s.r, 0, 7); ctx.fill(); });
+  ctx.restore();
+  const glow = ctx.createRadialGradient(cx, cy, R * .92, cx, cy, R * 1.3);
+  glow.addColorStop(0, 'rgba(90,155,255,.35)'); glow.addColorStop(1, 'rgba(90,155,255,0)');
+  ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(cx, cy, R * 1.3, 0, 7); ctx.fill();
+  const body = ctx.createRadialGradient(cx - R * .35, cy - R * .4, R * .1, cx, cy, R * 1.05);
+  body.addColorStop(0, '#345498'); body.addColorStop(.55, '#152a52'); body.addColorStop(1, '#060c20');
+  ctx.fillStyle = body; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.fill();
+  ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,.1)';
+  for (let g = 0; g < 12; g++) {   // poludníky
+    const lon0 = g * Math.PI / 6; ctx.beginPath(); let on = false;
+    for (let la = -90; la <= 90; la += 4) {
+      const p = globeRotate({ lat: la * Math.PI / 180, lon: lon0 });
+      if (p.z < -.08) { on = false; continue; }
+      const x = cx + p.x * R, y = cy - p.y * R;
+      on ? ctx.lineTo(x, y) : (ctx.moveTo(x, y), on = true);
+    }
+    ctx.stroke();
+  }
+  for (let la = -60; la <= 60; la += 30) {   // rovnobežky
+    ctx.beginPath(); let on = false;
+    for (let lo = 0; lo <= 360; lo += 4) {
+      const p = globeRotate({ lat: la * Math.PI / 180, lon: lo * Math.PI / 180 });
+      if (p.z < -.08) { on = false; continue; }
+      const x = cx + p.x * R, y = cy - p.y * R;
+      on ? ctx.lineTo(x, y) : (ctx.moveTo(x, y), on = true);
+    }
+    ctx.stroke();
+  }
+  const unlocked = GLOBE.pins.filter(p => p.i < story.progress.unlocked);
+  ctx.lineWidth = 2;
+  for (let k = 0; k < unlocked.length - 1; k++) {   // cesta medzi odomknutými misiami, tlmená na odvrátenej strane
+    const a = globeRotate(unlocked[k]), b = globeRotate(unlocked[k + 1]);
+    let mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, mz = (a.z + b.z) / 2;
+    const len = Math.hypot(mx, my, mz) || 1; mx /= len; my /= len; mz /= len;
+    const vis = Math.min(a.z, b.z, mz);
+    ctx.strokeStyle = 'rgba(255,213,74,' + Math.max(0, .12 + vis * .6).toFixed(2) + ')';
+    ctx.beginPath();
+    ctx.moveTo(cx + a.x * R, cy - a.y * R);
+    ctx.quadraticCurveTo(cx + mx * R * 1.08, cy - my * R * 1.08, cx + b.x * R, cy - b.y * R);
+    ctx.stroke();
+  }
+  const sheen = ctx.createRadialGradient(cx - R * .4, cy - R * .45, 0, cx - R * .4, cy - R * .45, R * 1.1);
+  sheen.addColorStop(0, 'rgba(255,255,255,.18)'); sheen.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = sheen; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.fill();
+}
+function layoutGlobePins() {
+  const cx = GLOBE.W / 2, cy = GLOBE.H / 2, R = GLOBE.R;
+  GLOBE.pins.forEach(p => {
+    const rp = globeRotate(p), x = cx + rp.x * R, y = cy - rp.y * R, front = rp.z > -.12;
+    const scale = .6 + .5 * Math.max(0, (rp.z + 1) / 2), opacity = front ? Math.min(1, .35 + (rp.z + 1) / 2) : 0;
+    p.el.style.transform = 'translate(-50%,-50%) translate(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px) scale(' + scale.toFixed(2) + ')';
+    p.el.style.opacity = opacity.toFixed(2);
+    p.el.style.zIndex = String(1000 + Math.round(rp.z * 100));
+    p.el.style.pointerEvents = front ? 'auto' : 'none';
+  });
+}
+function globeFrame() {
+  if (!GLOBE.dragging) {
+    GLOBE.yaw += GLOBE.vYaw; GLOBE.pitch = Math.max(-1.1, Math.min(1.1, GLOBE.pitch + GLOBE.vPitch));
+    GLOBE.vYaw *= .96; GLOBE.vPitch *= .9;
+    if (GLOBE.autoSpin && Math.abs(GLOBE.vYaw) < .0009) GLOBE.vYaw = .0009;
+    else if (!GLOBE.autoSpin && Math.abs(GLOBE.vYaw) < .0015) GLOBE.vYaw = 0;
+  }
+  drawGlobe(); layoutGlobePins();
+  GLOBE.raf = requestAnimationFrame(globeFrame);
+}
+function startGlobeLoop() { if (GLOBE.raf) return; globeResize(); globeFrame(); }
+function stopGlobeLoop() { if (GLOBE.raf) { cancelAnimationFrame(GLOBE.raf); GLOBE.raf = null; } }
+function initGlobeInput() {
+  const wrap = $('globeWrap');
+  let active = null, lastX = 0, lastY = 0, lastT = 0, vhist = [];
+  wrap.addEventListener('pointerdown', e => {
+    if (e.target.closest('.missionPin')) return;   // necháva kliknutie na pine prejsť bez spustenia ťahania
+    active = e.pointerId; GLOBE.dragging = true; GLOBE.autoSpin = false;
+    lastX = e.clientX; lastY = e.clientY; lastT = performance.now(); vhist = [];
+    wrap.setPointerCapture(e.pointerId);
+  });
+  wrap.addEventListener('pointermove', e => {
+    if (active === null || e.pointerId !== active) return;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY, now = performance.now(), dt = Math.max(1, now - lastT);
+    GLOBE.yaw += dx * .006; GLOBE.pitch = Math.max(-1.1, Math.min(1.1, GLOBE.pitch - dy * .006));
+    vhist.push({ vy: dx * .006 / dt * 16, vp: -dy * .006 / dt * 16 }); if (vhist.length > 6) vhist.shift();
+    lastX = e.clientX; lastY = e.clientY; lastT = now;
+  });
+  const onUp = e => {
+    if (active === null || e.pointerId !== active) return;
+    active = null; GLOBE.dragging = false;
+    if (vhist.length) {
+      const s = vhist.reduce((a, v) => ({ vy: a.vy + v.vy, vp: a.vp + v.vp }), { vy: 0, vp: 0 });
+      GLOBE.vYaw = s.vy / vhist.length; GLOBE.vPitch = s.vp / vhist.length;
+    }
+  };
+  wrap.addEventListener('pointerup', onUp); wrap.addEventListener('pointercancel', onUp);
+  wrap.addEventListener('wheel', e => { e.preventDefault(); GLOBE.zoom = Math.max(.6, Math.min(1.6, GLOBE.zoom * (1 - e.deltaY * .001))); globeResize(); }, { passive: false });
+  $('globeReset').addEventListener('click', () => { GLOBE.yaw = .6; GLOBE.pitch = -.25; GLOBE.vYaw = .08; GLOBE.vPitch = 0; GLOBE.zoom = 1; GLOBE.autoSpin = true; globeResize(); });
+}
+function renderStoryList() {
+  const wrap = $('storyList');
+  if (!GLOBE.canvas) {
+    wrap.innerHTML = '<div class="globeWrap" id="globeWrap"><canvas id="globeCanvas"></canvas><div class="globePins" id="globePins"></div>' +
+      '<div class="globeHint">🖱️ Ťahaj a otáčaj zemeguľu · 🔒 uzamknutá misia</div>' +
+      '<button type="button" class="globeReset" id="globeReset" aria-label="Resetovať pohľad">⟲</button></div>';
+    GLOBE.canvas = $('globeCanvas'); GLOBE.ctx = GLOBE.canvas.getContext('2d');
+    initGlobeInput();
+  }
+  const pinsHost = $('globePins'); pinsHost.innerHTML = '';
+  GLOBE.pins = globeMissionPts().map(p => {
     const unlocked = p.i < story.progress.unlocked, done = !!story.progress.done[p.i];
     const pc = done ? '#5fd35f' : unlocked ? '#ffd54a' : '#555';
-    const left = (p.x / VW * 100).toFixed(2), top = (p.y / VH * 100).toFixed(2);
-    return '<button type="button" class="missionPin' + (unlocked ? '' : ' locked') + '" style="left:' + left + '%;top:' + top + '%;--pc:' + pc + '"' + (unlocked ? ' data-mission="' + p.i + '"' : '') + ' aria-label="' + esc(p.m.title) + '">' +
-      (done ? '<span class="chk">✓</span>' : '') +
-      '<span class="num">' + (unlocked ? (p.i + 1) : '🔒') + '</span><span class="ic">' + BIOMES[p.m.terrain].icon + '</span></button>' +
-      '<div class="pinLabel" style="left:' + left + '%;top:calc(' + top + '% + 5%)">' + (p.i + 1) + '. ' + esc(p.m.title) + '</div>';
-  }).join('');
-  $('storyList').innerHTML = '<div class="storyMap">' + svg + pins + '</div>';
-  const next = STORY_MISSIONS[clampInt(story.progress.unlocked - 1, 0, N - 1, 0)];
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'missionPin' + (unlocked ? '' : ' locked');
+    btn.style.setProperty('--pc', pc); btn.setAttribute('aria-label', p.m.title);
+    if (unlocked) btn.dataset.mission = p.i;
+    btn.innerHTML = (done ? '<span class="chk">✓</span>' : '') + '<span class="num">' + (unlocked ? (p.i + 1) : '🔒') + '</span><span class="ic">' + BIOMES[p.m.terrain].icon + '</span>';
+    pinsHost.appendChild(btn); p.el = btn; return p;
+  });
+  const next = STORY_MISSIONS[clampInt(story.progress.unlocked - 1, 0, STORY_MISSIONS.length - 1, 0)];
   $('storyDetail').innerHTML = '<b>' + (story.progress.unlocked) + '. ' + esc(next.title) + '</b><br>' + esc(storyMissionSub(next)) + '<br>' + esc(next.text);
+  startGlobeLoop();
 }
 $('homeStoryBtn').addEventListener('click', () => { hide('home'); renderStoryList(); show('story'); });
-$('storyClose').addEventListener('click', () => { hide('story'); show('home'); });
+$('storyClose').addEventListener('click', () => { stopGlobeLoop(); hide('story'); show('home'); });
 function showStoryDetail(i) {
   const m = STORY_MISSIONS[i];
   $('storyDetail').innerHTML = '<b>' + (i + 1) + '. ' + esc(m.title) + '</b><br>' + esc(storyMissionSub(m)) + '<br>' + esc(m.text);
@@ -2565,6 +2669,7 @@ function resize() {
   const s = Math.min(vw / W, vh / H);
   cv.style.width = Math.floor(W * s) + 'px'; cv.style.height = Math.floor(H * s) + 'px';
   positionPads();
+  if (GLOBE.canvas) globeResize();
 }
 addEventListener('resize', resize);
 addEventListener('orientationchange', () => setTimeout(resize, 250));

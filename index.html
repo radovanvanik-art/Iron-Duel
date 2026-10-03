@@ -85,24 +85,22 @@
   #storyList{flex:1;min-height:0;display:flex}
   #storyDetail{flex:none}
   #story .row{flex:none}
-  .storyMap{position:relative;width:100%;flex:1;min-height:0;border-radius:14px;overflow:hidden;background:#0a0f1e url('assets/story-map-bg.jpg') center/cover;margin:10px 0 16px;border:1px solid rgba(255,255,255,.08)}
-  .storyMap::before{content:"";position:absolute;inset:0;background:rgba(8,11,20,.45);z-index:0}
-  .storyMap svg, .storyMap .missionPin, .storyMap .pinLabel{z-index:1}
-  .storyMap svg{position:absolute;inset:0;width:100%;height:100%}
-  .missionPin{position:absolute;transform:translate(-50%,-50%);width:12%;aspect-ratio:1;max-width:72px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-direction:column;background:radial-gradient(circle at 35% 30%,#2c3a63,#141b30);border:3px solid var(--pc);cursor:pointer;font-weight:800;color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.5);touch-action:manipulation;padding:0}
-  .missionPin::before{content:"";position:absolute;top:-15px;left:50%;width:2px;height:16px;background:var(--pc);opacity:.9}
-  .missionPin::after{content:"";position:absolute;top:-15px;left:calc(50% + 2px);width:0;height:0;border-style:solid;border-width:0 0 9px 13px;border-color:transparent transparent transparent var(--pc);filter:drop-shadow(0 2px 2px rgba(0,0,0,.5))}
-  .missionPin:not(.locked):hover{filter:brightness(1.2);transform:translate(-50%,-50%) scale(1.08)}
-  .missionPin.locked{cursor:default;filter:grayscale(.6) brightness(.6)}
-  .missionPin .num{font-size:clamp(12px,2vw,17px);line-height:1}
-  .missionPin .ic{font-size:clamp(14px,2.6vw,20px);line-height:1;margin-top:1px}
+  .globeWrap{position:relative;width:100%;flex:1;min-height:0;border-radius:14px;overflow:hidden;background:radial-gradient(ellipse at 50% 28%,#111c3c,#04060e 72%);margin:10px 0 16px;border:1px solid rgba(255,255,255,.08);touch-action:none;cursor:grab}
+  .globeWrap:active{cursor:grabbing}
+  .globeWrap canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+  .globePins{position:absolute;inset:0;pointer-events:none}
+  .globeHint{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);font-size:11px;font-weight:600;color:var(--muted);background:rgba(8,11,20,.72);padding:4px 11px;border-radius:20px;pointer-events:none;white-space:nowrap;backdrop-filter:blur(2px)}
+  .globeReset{position:absolute;right:10px;top:10px;width:36px;height:36px;border-radius:50%;border:1px solid rgba(255,255,255,.2);background:rgba(10,14,26,.78);color:#fff;font-size:18px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;touch-action:manipulation}
+  .globeReset:hover{background:rgba(255,255,255,.14)}
+  .missionPin{position:absolute;left:0;top:0;transform:translate(-50%,-50%);width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-direction:column;background:radial-gradient(circle at 35% 30%,#2c3a63,#141b30);border:3px solid var(--pc);cursor:pointer;font-weight:800;color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.55),0 0 16px -2px var(--pc);pointer-events:auto;padding:0;transition:filter .1s;will-change:transform,opacity}
+  .missionPin:not(.locked):hover{filter:brightness(1.28)}
+  .missionPin.locked{cursor:default;filter:grayscale(.65) brightness(.55)}
+  .missionPin .num{font-size:14px;line-height:1}
+  .missionPin .ic{font-size:15px;line-height:1;margin-top:1px}
   .missionPin .chk{position:absolute;top:-6px;right:-6px;background:#5fd35f;color:#0a1030;border-radius:50%;width:18px;height:18px;font-size:11px;display:flex;align-items:center;justify-content:center;border:2px solid #080b16}
-  .pinLabel{position:absolute;transform:translate(-50%,0);white-space:normal;font-size:clamp(10px,1.4vw,13px);font-weight:700;color:#fff;text-shadow:0 2px 6px #000;pointer-events:none;max-width:130px;text-align:center;opacity:0;transition:opacity .15s;background:rgba(10,14,26,.85);border-radius:6px;padding:2px 6px}
-  .missionPin:hover + .pinLabel{opacity:1}
   .storyDetail{min-height:70px;background:rgba(255,255,255,.04);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:13px;color:var(--muted)}
   .storyDetail b{color:#fff}
-  @media (max-width:560px){ .pinLabel{display:none} }
-  @media (max-width:640px){ #story .card{padding:10px} }
+  @media (max-width:640px){ .missionPin{width:36px;height:36px} .missionPin .num{font-size:11px} .missionPin .ic{font-size:11px} .globeHint{font-size:9.5px;padding:3px 9px} #story .card{padding:10px} }
   @media (max-height:480px){   /* mobil naležato: chrome okolo mapy zredukovaný na minimum, nech mapa dostane čo najviac miesta */
     #story .card{padding:6px 14px}
     #story .card>p{display:none}
