@@ -309,10 +309,10 @@
   <div class="card">
     <div class="logoBadge"><svg><use href="#ironIcon"/></svg></div>
     <h1>IRON DUEL <span>: TANK COMMANDERS</span></h1>
-    <p>Zadaj svoju prezývku. Pod ňou sa ti budú ukladať štatistiky, farba tanku aj rozohrané zápasy.</p>
-    <input class="pname" id="loginNick" maxlength="14" list="nickList" autocomplete="off" placeholder="Tvoja prezývka" aria-label="Prezývka">
+    <p>Prihlás sa cez Google – tvoj postup v kampani, výbava aj rebríček ťa budú čakať na každom zariadení.</p>
+    <button class="btn" id="googleLoginBtn" style="width:100%">🔵 Prihlásiť sa cez Google</button>
     <div id="loginMsg"></div>
-    <button class="btn" id="loginBtn" style="width:100%">▶ Vstúpiť</button>
+    <button class="btn alt" id="guestLoginBtn" style="width:100%">Hrať ako hosť (bez ukladania postupu)</button>
   </div>
 </div>
 
@@ -486,6 +486,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
   try {
     firebase.initializeApp({

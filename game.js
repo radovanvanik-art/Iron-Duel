@@ -318,6 +318,60 @@ let profiles = {};
 try { const v = JSON.parse(localStorage.getItem(PROF_KEY)); if (v && typeof v === 'object' && !Array.isArray(v)) profiles = v; } catch (_) {}
 const nickKey = str => 'n_' + str.trim().toLowerCase();      // predpona chráni pred kľúčmi ako __proto__
 const newProfile = (nick, color) => ({ nick, color, created: Date.now(), matches: 0, wins: 0, rounds: 0, kills: 0, bestLevel: 1, level: 1, xp: 0, last: 0, storyLoadout: null, story: null });
+
+// ---------- Supabase (účet cez Google) - profil/postup prihláseného hráča sa zrkadlí aj do cloudu, nielen do localStorage ----------
+const SUPABASE_URL = 'https://axrplnzgqrltmabhljih.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF4cnBsbnpncXJsdG1hYmhsamloIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEwNDkwNDcsImV4cCI6MjEwNjYyNTA0N30.-k5o7PDqziM09j0naC7jyIdzGf42Fc6jDL-5DORxsXI';
+let sb = null;
+try { if (window.supabase && window.supabase.createClient) sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); } catch (_) {}
+let cloudUser = null;   // { id, nick } keď je hráč prihlásený cez Google; inak null = hosť/len lokálny profil v tomto prehliadači
+let loginError = '';
+function cloudProfileRowToLocal(row) {
+  return {
+    nick: row.nick, color: isColor(row.color) ? row.color : PALETTE[0], created: row.created_at ? Date.parse(row.created_at) : Date.now(),
+    matches: row.matches || 0, wins: row.wins || 0, rounds: row.rounds || 0, kills: row.kills || 0,
+    bestLevel: row.best_level || 1, level: row.level || 1, xp: row.xp || 0, last: row.last_played_at ? Date.parse(row.last_played_at) : 0,
+    storyLoadout: row.story_loadout || null,
+    story: { unlocked: clampInt(row.story_unlocked, 1, STORY_MISSIONS.length, 1), done: Array.isArray(row.story_done) ? row.story_done.map(Boolean) : [] },
+  };
+}
+async function cloudFetchProfile(userId) {
+  try { const { data, error } = await sb.from('profiles').select('*').eq('id', userId).single(); return error ? null : data; }
+  catch (_) { return null; }
+}
+function cloudPush() {   // write-through: po uložení lokálneho profilu potichu zapíš aj do Supabase, keď je niekto prihlásený cez Google
+  if (!cloudUser || !sb) return;
+  const p = profiles[nickKey(cloudUser.nick)]; if (!p) return;
+  sb.from('profiles').update({
+    color: p.color, matches: p.matches, wins: p.wins, rounds: p.rounds, kills: p.kills,
+    best_level: p.bestLevel, level: p.level, xp: p.xp,
+    last_played_at: p.last ? new Date(p.last).toISOString() : null,
+    story_loadout: p.storyLoadout, story_unlocked: p.story ? p.story.unlocked : 1, story_done: p.story ? p.story.done : [],
+  }).eq('id', cloudUser.id).then(({ error }) => { if (error) console.warn('Supabase sync zlyhal:', error.message); });
+}
+async function enterCloudSession(user) {   // zavolá sa po úspešnom Google prihlásení (aj pri obnovení už prihlásenej relácie)
+  const row = await cloudFetchProfile(user.id);
+  if (!row) return false;   // DB riadok ešte nevznikol (trigger beží tesne po registrácii) - skús znova nabudúce
+  const prevNick = setup.players[0].nick;   // prezývka aktívna v tomto prehliadači TESNE pred Google prihlásením (napr. stará hosťovská) - na migráciu postupu
+  const prevLocal = prevNick ? getProfile(prevNick) : null;
+  const key = nickKey(row.nick);
+  const cloudIsFresh = !row.matches && !row.wins && clampInt(row.story_unlocked, 1, STORY_MISSIONS.length, 1) <= 1 && !row.story_loadout;
+  const prevHasProgress = prevLocal && (prevLocal.matches > 0 || (prevLocal.story && prevLocal.story.unlocked > 1) || prevLocal.storyLoadout);
+  if (cloudIsFresh && prevHasProgress) {   // čerstvý/prázdny cloud profil, ale v tomto prehliadači existuje staršia rozohratá hosťovská prezývka - prenes JEJ postup (aj keď sa prezývky zhodujú len formou veľkých písmen)
+    profiles[key] = Object.assign({}, prevLocal, { nick: row.nick, color: isColor(row.color) ? row.color : prevLocal.color });   // prenes doterajší lokálny postup do nového Google účtu
+    cloudUser = { id: user.id, nick: row.nick };
+    cloudPush();
+  } else {
+    profiles[key] = cloudProfileRowToLocal(row);
+    cloudUser = { id: user.id, nick: row.nick };
+  }
+  setup.players[0].nick = row.nick; setup.players[0].name = row.nick;
+  if (isColor(profiles[key].color)) setup.players[0].color = profiles[key].color;
+  saveSetup();
+  refreshStoryProgressSource();
+  return true;
+}
+
 // ---------- výbava v kampani (munícia a vylepšenia, ktoré hráč neminul, prenesené do ďalšej misie) ----------
 function storyLoadoutSnapshot(t) {
   return {
@@ -344,7 +398,7 @@ function saveStoryLoadout(t) {
   p.storyLoadout = storyLoadoutSnapshot(t);
   saveProfiles();
 }
-function saveProfiles() { try { localStorage.setItem(PROF_KEY, JSON.stringify(profiles)); } catch (_) {} }
+function saveProfiles() { try { localStorage.setItem(PROF_KEY, JSON.stringify(profiles)); } catch (_) {} cloudPush(); }
 const getProfile = nick => (nick && Object.prototype.hasOwnProperty.call(profiles, nickKey(nick))) ? profiles[nickKey(nick)] : null;
 const statsLine = p => 'Zápasy ' + p.matches + ' · Výhry ' + p.wins + (p.matches ? ' (' + Math.round(100 * p.wins / p.matches) + ' %)' : '') +
   ' · Kolá ' + p.rounds + ' · Zničené tanky ' + p.kills + ' · Veliteľská hodnosť LV ' + (p.level || 1);
@@ -2612,33 +2666,47 @@ $('menuBackBtn').addEventListener('click', () => { if (net.active) netLeave(); h
 $('settingsBackBtn').addEventListener('click', () => { hide('settings'); show('home'); });
 $('creditsBackBtn').addEventListener('click', () => { hide('credits'); show('home'); });
 
-// ---------- prihlásenie prezývkou (jednoduchý účet bez hesla) a domovská obrazovka ----------
-function renderLogin() { $('loginMsg').textContent = slotMsg[0] || ''; }
-function doLogin() {
-  loginSlot(0, $('loginNick').value);
-  refreshStoryProgressSource();
-  if (setup.players[0].nick) { enterHome(); } else { renderLogin(); }
-}
+// ---------- prihlásenie cez Google (Supabase Auth) alebo hosťovský vstup bez účtu, a domovská obrazovka ----------
+function renderLogin() { $('loginMsg').textContent = loginError || ''; }
 function enterHome() {
-  $('loginNick').value = ''; slotMsg[0] = '';
   hide('login'); refreshContinue(); renderHome(); show('home');
 }
 function renderHome() {
   const nick = setup.players[0].nick, prof = nick ? getProfile(nick) : null;
-  $('homeGreet').textContent = nick ? ('Prihlásený ako ' + nick + (prof ? ' · veliteľská hodnosť LV ' + (prof.level || 1) : '')) : '';
+  $('homeGreet').textContent = nick ? ((cloudUser ? 'Prihlásený cez Google ako ' : 'Hráš ako ') + nick + (prof ? ' · veliteľská hodnosť LV ' + (prof.level || 1) : '')) : '';
   const sv = readSave();
   $('homeContBtn').style.display = sv ? '' : 'none';
   if (sv) $('homeContBtn').textContent = '▶ Pokračovať: kolo ' + sv.round + ' · ' + sv.players.length + ' hráči';
 }
-$('loginBtn').addEventListener('click', doLogin);
-$('loginNick').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); doLogin(); } });
+$('googleLoginBtn').addEventListener('click', () => {
+  if (!sb) { loginError = 'Prihlásenie cez Google momentálne nie je dostupné (skontroluj internetové pripojenie).'; renderLogin(); return; }
+  loginError = ''; renderLogin();
+  sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin + window.location.pathname } })
+    .then(({ error }) => { if (error) { loginError = 'Prihlásenie zlyhalo: ' + error.message; renderLogin(); } });
+});
+$('guestLoginBtn').addEventListener('click', () => {
+  setup.players[0].nick = null; saveSetup(); refreshStoryProgressSource(); enterHome();
+});
 $('homePlayBtn').addEventListener('click', () => { hide('home'); refreshContinue(); renderSetup(); show('menu'); });
 $('homeContBtn').addEventListener('click', () => { hide('home'); goFullscreen(); continueGame(); });
 $('homeSettingsBtn').addEventListener('click', () => { hide('home'); show('settings'); });
 $('homeCreditsBtn').addEventListener('click', () => { hide('home'); show('credits'); });
 $('homeLogoutBtn').addEventListener('click', () => {
-  ask('Naozaj sa chceš odhlásiť?', () => { logoutSlot(0); refreshStoryProgressSource(); hide('home'); renderLogin(); show('login'); });
+  ask('Naozaj sa chceš odhlásiť?', () => {
+    if (cloudUser && sb) { sb.auth.signOut(); }   // onAuthStateChange nižšie dorieši UI prepnutie na #login
+    else { logoutSlot(0); refreshStoryProgressSource(); hide('home'); renderLogin(); show('login'); }
+  });
 });
+if (sb) {
+  sb.auth.onAuthStateChange((event, session) => {
+    if (event === 'SIGNED_IN' && session && session.user) {
+      enterCloudSession(session.user).then(ok => { if (ok) enterHome(); });
+    } else if (event === 'SIGNED_OUT') {
+      cloudUser = null; setup.players[0].nick = null; saveSetup(); refreshStoryProgressSource();
+      hide('home'); renderLogin(); show('login');
+    }
+  });
+}
 $('pauseBtn').addEventListener('click', () => setPause(true));
 $('resumeBtn').addEventListener('click', () => setPause(false));
 $('quitBtn').addEventListener('click', toMenu);
@@ -2954,8 +3022,19 @@ document.querySelectorAll('.menuBg').forEach(el => {
   img.onerror = () => { el.innerHTML = MENU_BG_SVG; };   // AI podklad sa nenačítal - záložné ručné SVG pozadie
   img.src = 'assets/menu-bg.jpg';
 });
-if (setup.players[0].nick && getProfile(setup.players[0].nick)) { refreshStoryProgressSource(); hide('login'); renderHome(); show('home'); }
-else { setup.players[0].nick = null; refreshStoryProgressSource(); renderLogin(); }
+(async () => {   // zisti, či už existuje prihlásená Google (Supabase) relácia z predošlej návštevy, inak záložne skontroluj starý lokálny/hosťovský stav
+  if (sb) {
+    try {
+      const { data: { session } } = await sb.auth.getSession();
+      if (session && session.user) {
+        const ok = await enterCloudSession(session.user);
+        if (ok) { hide('login'); refreshContinue(); renderHome(); show('home'); return; }
+      }
+    } catch (e) { console.warn('Supabase relácia sa nepodarilo overiť:', e); }
+  }
+  if (setup.players[0].nick && getProfile(setup.players[0].nick)) { refreshStoryProgressSource(); hide('login'); renderHome(); show('home'); }
+  else { setup.players[0].nick = null; refreshStoryProgressSource(); renderLogin(); }
+})();
 let last = performance.now(), slowMs = 0;
 function loop(now) {
   const raw = Math.min(now - last, 100), dt = Math.min(0.033, raw / 1000); last = now;
