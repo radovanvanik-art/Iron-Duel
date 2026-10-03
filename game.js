@@ -541,6 +541,16 @@ function globeRotate(p) {   // premietne bod gule (lat/lon) do rotovaného 3D pr
   const cp = Math.cos(GLOBE.pitch), sp = Math.sin(GLOBE.pitch);
   return { x, y: y0 * cp - z0 * sp, z: y0 * sp + z0 * cp };
 }
+function globeResize() {
+  const wrap = $('globeWrap'); if (!wrap || !GLOBE.canvas) return;
+  const r = wrap.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
+  GLOBE.W = Math.max(1, Math.round(r.width)); GLOBE.H = Math.max(1, Math.round(r.height));
+  GLOBE.canvas.width = GLOBE.W * dpr; GLOBE.canvas.height = GLOBE.H * dpr;
+  GLOBE.canvas.style.width = GLOBE.W + 'px'; GLOBE.canvas.style.height = GLOBE.H + 'px';
+  GLOBE.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  GLOBE.R = Math.min(GLOBE.W, GLOBE.H) * .38 * GLOBE.zoom;
+  if (!GLOBE.stars) GLOBE.stars = Array.from({ length: 140 }, () => ({ x: Math.random(), y: Math.random(), r: Math.random() * 1.4 + .3, a: Math.random() * .6 + .3 }));
+}
 function globeTerrainAt(latDeg, lonDeg) {   // ktorý biómový "kontinent" (ak žiadny, oceán), s roztrhaným pobrežím cez šum
   let best = null, bestRatio = Infinity;
   for (const key in GLOBE_ANCHORS) {
