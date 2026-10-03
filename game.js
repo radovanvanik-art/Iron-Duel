@@ -2176,10 +2176,14 @@ function drawHud() {
   const n = tanks.length, hw = Math.min(300, (W - 40 - (n - 1) * 24) / n), hgap = (W - 40 - n * hw) / (n - 1);
   tanks.forEach((t, i) => {
     const w = hw, x = 20 + i * (hw + hgap), y = 16, bw = w - 24;
+    const act = state === 'play' && i === turnIdx;
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,.5)'; ctx.shadowBlur = act ? 18 : 10; ctx.shadowOffsetY = 4;
     const pg = ctx.createLinearGradient(0, y, 0, y + 112); pg.addColorStop(0, 'rgba(30,42,70,.82)'); pg.addColorStop(1, 'rgba(8,12,22,.74)');
     ctx.fillStyle = pg; roundRect(x, y, w, 112, 10); ctx.fill();
-    const act = state === 'play' && i === turnIdx;
-    ctx.strokeStyle = t.color; ctx.lineWidth = act ? 5 : 2; ctx.stroke();
+    ctx.restore();
+    if (act) { ctx.save(); ctx.shadowColor = t.color; ctx.shadowBlur = 14; roundRect(x, y, w, 112, 10); ctx.strokeStyle = t.color; ctx.lineWidth = 5; ctx.stroke(); ctx.restore(); }
+    else { roundRect(x, y, w, 112, 10); ctx.strokeStyle = t.color; ctx.lineWidth = 2; ctx.stroke(); }
     ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.font = 'bold 15px system-ui';
     ctx.fillText(t.name, x + 12, y + 22);
     const nameW = ctx.measureText(t.name).width;
@@ -2188,9 +2192,9 @@ function drawHud() {
     ctx.fillStyle = t.color; ctx.fillText('★' + t.wins, x + 12 + nameW + 8 + ctx.measureText('LV ' + t.level).width + 8, y + 22);
     ctx.font = 'bold 15px system-ui'; ctx.textAlign = 'right'; ctx.fillText('€' + t.money, x + w - 12, y + 22);
     const mh = maxHp(t);
-    ctx.fillStyle = 'rgba(255,255,255,.15)'; ctx.fillRect(x + 12, y + 30, bw, 12);
+    ctx.fillStyle = 'rgba(255,255,255,.15)'; roundRect(x + 12, y + 30, bw, 12, 5); ctx.fill();
     ctx.fillStyle = t.hp / mh > .5 ? '#5fd35f' : t.hp / mh > .25 ? '#f0c040' : '#e5484d';
-    ctx.fillRect(x + 12, y + 30, bw * clamp(t.hp / mh, 0, 1), 12);
+    const hpW = bw * clamp(t.hp / mh, 0, 1); if (hpW > 1) { roundRect(x + 12, y + 30, hpW, 12, 5); ctx.fill(); }
     ctx.fillStyle = '#fff'; ctx.font = 'bold 10px system-ui'; ctx.textAlign = 'center';
     ctx.fillText(Math.ceil(t.hp) + ' / ' + mh, x + w / 2, y + 40);
     if (t.shield > 0) {   // štít - farba podľa úrovne
@@ -2198,8 +2202,9 @@ function drawHud() {
       ctx.textAlign = 'right'; ctx.font = 'bold 10px system-ui'; ctx.fillText('ŠTÍT L' + t.shT + ' · ' + Math.ceil(t.shield), x + w - 12, y + 68);
     }
     const fcap = fuelCap(t), lowFuel = t.fuel < fcap * 0.2;
-    ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.fillRect(x + 12, y + 53, bw * 0.55, 5);
-    ctx.fillStyle = lowFuel && Math.floor(time * 4) % 2 ? '#ff3d00' : '#ff9a3c'; ctx.fillRect(x + 12, y + 53, bw * 0.55 * clamp(t.fuel / fcap, 0, 1), 5);
+    ctx.fillStyle = 'rgba(255,255,255,.12)'; roundRect(x + 12, y + 53, bw * 0.55, 5, 2.5); ctx.fill();
+    ctx.fillStyle = lowFuel && Math.floor(time * 4) % 2 ? '#ff3d00' : '#ff9a3c';
+    const fW = bw * 0.55 * clamp(t.fuel / fcap, 0, 1); if (fW > 1) { roundRect(x + 12, y + 53, fW, 5, 2.5); ctx.fill(); }
     ctx.textAlign = 'left'; ctx.font = '10px system-ui'; ctx.fillStyle = 'rgba(255,255,255,.75)';
     ctx.fillText('PALIVO ' + Math.ceil(t.fuel) + '/' + fcap, x + 12, y + 68);
     ctx.font = '13px system-ui';
@@ -2251,8 +2256,8 @@ function show(id) { $(id).classList.add('show'); }
 function hide(id) { $(id).classList.remove('show'); }
 let bannerT = 0;
 function banner(text, ms) {
-  const b = $('banner'); b.textContent = text; b.style.display = 'block';
-  clearTimeout(bannerT); bannerT = setTimeout(() => b.style.display = 'none', ms);
+  const b = $('banner'); b.textContent = text; b.classList.remove('show'); void b.offsetWidth; b.classList.add('show');
+  clearTimeout(bannerT); bannerT = setTimeout(() => b.classList.remove('show'), ms);
 }
 const chipColor = k => k >= 10 ? 'linear-gradient(90deg,#ff5f5f,#ffd54a,#5fd35f,#4aa8ff,#c15bff)' : TIER_COLORS[k - 1];
 function itemCost(t, it) { return it.kind === 'up' ? it.costFn(t[it.lvlKey]) : it.cost; }
