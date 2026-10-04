@@ -2913,6 +2913,57 @@ document.addEventListener('fullscreenchange', resize); document.addEventListener
 $('startBtn').addEventListener('click', () => { goFullscreen(); startMatch(); });
 $('againBtn').addEventListener('click', () => { goFullscreen(); startMatch(true); });
 $('menuBtn').addEventListener('click', toMenu);
+// ---------- zdieľanie highlightu zápasu (snímka bojiska z plátna hry + poskladaný výsledkový pruh) ----------
+function wrapCanvasText(c, text, x, y, maxW, lh, maxLines) {
+  const words = String(text).split(' '); let line = '', yy = y, n = 0;
+  for (const w of words) {
+    const test = line ? line + ' ' + w : w;
+    if (c.measureText(test).width > maxW && line) {
+      c.fillText(line, x, yy); yy += lh; n++;
+      if (maxLines && n >= maxLines - 1) { line = w; break; }
+      line = w;
+    } else line = test;
+  }
+  if (line) c.fillText(line, x, yy);
+}
+function composeMatchImage() {
+  const W = cv.width, H = cv.height;
+  const out = document.createElement('canvas'); out.width = W; out.height = H;
+  const o = out.getContext('2d');
+  o.drawImage(cv, 0, 0, W, H);
+  const barH = Math.round(H * 0.24);
+  const grad = o.createLinearGradient(0, H - barH, 0, H);
+  grad.addColorStop(0, 'rgba(5,8,14,0)'); grad.addColorStop(.4, 'rgba(5,8,14,.88)'); grad.addColorStop(1, 'rgba(5,8,14,.96)');
+  o.fillStyle = grad; o.fillRect(0, H - barH, W, barH);
+  o.textAlign = 'left';
+  o.fillStyle = '#ffd54a'; o.font = '700 17px system-ui,sans-serif';
+  o.fillText('🎖️ IRON DUEL: TANK COMMANDERS', 32, H - barH + 32);
+  o.fillStyle = $('endTitle').style.color || '#fff';
+  o.font = '800 38px "Black Ops One",system-ui,sans-serif';
+  o.fillText($('endTitle').textContent || '', 32, H - barH + 80);
+  const subText = ($('endSub').textContent || '').replace(/\s+/g, ' ').trim();
+  o.fillStyle = '#cfd4e0'; o.font = '400 17px system-ui,sans-serif';
+  wrapCanvasText(o, subText, 32, H - barH + 112, W - 64, 24, 4);
+  return out;
+}
+async function shareMatchImage() {
+  try { await document.fonts.ready; } catch (_) {}
+  let out;
+  try { out = composeMatchImage(); } catch (e) { console.warn('Príprava snímky zlyhala:', e); banner('⚠️ Snímku sa nepodarilo pripraviť.', 2400); return; }
+  out.toBlob(async blob => {
+    if (!blob) { banner('⚠️ Snímku sa nepodarilo pripraviť.', 2400); return; }
+    const file = (typeof File !== 'undefined') ? new File([blob], 'iron-duel-vysledok.png', { type: 'image/png' }) : null;
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: 'Iron Duel: Tank Commanders', text: $('endTitle').textContent || '' }); return; }
+      catch (e) { if (e && e.name === 'AbortError') return; /* inak pokračuj na stiahnutie ako zálohu */ }
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'iron-duel-vysledok.png'; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    banner('💾 Snímka stiahnutá', 2000);
+  }, 'image/png');
+}
+$('endShareBtn').addEventListener('click', shareMatchImage);
 $('contBtn').addEventListener('click', () => { goFullscreen(); continueGame(); });
 $('delBtn').addEventListener('click', () => ask('Zmazať uloženú hru?', () => { clearSave(); refreshContinue(); renderHome(); }));
 $('saveQuit').addEventListener('click', () => { saveGame(); toMenu(); });
