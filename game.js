@@ -1230,8 +1230,8 @@ function initGlobeInput() {
   wrap.addEventListener('pointermove', e => {
     if (active === null || e.pointerId !== active) return;
     const dx = e.clientX - lastX, dy = e.clientY - lastY, now = performance.now(), dt = Math.max(1, now - lastT);
-    GLOBE.yaw += dx * .006; GLOBE.pitch = Math.max(-1.1, Math.min(1.1, GLOBE.pitch - dy * .006));
-    vhist.push({ vy: dx * .006 / dt * 16, vp: -dy * .006 / dt * 16 }); if (vhist.length > 6) vhist.shift();
+    GLOBE.yaw += dx * .006; GLOBE.pitch = Math.max(-1.1, Math.min(1.1, GLOBE.pitch + dy * .006));
+    vhist.push({ vy: dx * .006 / dt * 16, vp: dy * .006 / dt * 16 }); if (vhist.length > 6) vhist.shift();
     lastX = e.clientX; lastY = e.clientY; lastT = now;
   });
   const onUp = e => {
