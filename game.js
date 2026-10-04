@@ -417,7 +417,10 @@ async function enterCloudSession(user) {   // zavolá sa po úspešnom Google pr
     cloudUser = { id: user.id, nick: row.nick };
     cloudPush();
   } else {
+    const prevP = profiles[key];   // denná/týždenná výzva sa do cloudu neukladá (nemá tam stĺpec) - zachovaj ju z lokálneho uloženia, inak by sa pri každom obnovení relácie vynulovala
     profiles[key] = cloudProfileRowToLocal(row);
+    if (prevP && prevP.daily) profiles[key].daily = prevP.daily;
+    if (prevP && prevP.weekly) profiles[key].weekly = prevP.weekly;
     cloudUser = { id: user.id, nick: row.nick };
   }
   setup.players[0].nick = row.nick; setup.players[0].name = row.nick;
