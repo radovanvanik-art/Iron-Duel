@@ -297,18 +297,64 @@
   .hub .btn.alt:hover{filter:brightness(1.12);transform:translateY(-1px);box-shadow:0 6px 0 #171d2e,inset 0 2px 0 rgba(255,255,255,.3)}
   .hub .btn.alt:active{box-shadow:0 1px 0 #171d2e,inset 0 2px 0 rgba(255,255,255,.2);transform:translateY(3px)}
 
-  /* domovská obrazovka a prihlásenie: veľké tlačidlá pod sebou */
-  #home .card,#login .card,#credits .card{max-width:440px;text-align:center}
-  #home .homeRow{display:flex;flex-direction:column;gap:12px;margin-top:14px}
-  #home .homeRow .btn{width:100%;font-size:18px;padding:14px 22px;animation:rowIn .4s ease both}
-  #home .homeRow .btn:nth-child(1){animation-delay:.03s}
-  #home .homeRow .btn:nth-child(2){animation-delay:.07s}
-  #home .homeRow .btn:nth-child(3){animation-delay:.11s}
-  #home .homeRow .btn:nth-child(4){animation-delay:.15s}
-  #home .homeRow .btn:nth-child(5){animation-delay:.19s}
-  #home .homeRow .btn:nth-child(6){animation-delay:.23s}
-  #home .homeRow .btn:nth-child(7){animation-delay:.27s}
-  #home .homeRow .btn:nth-child(8){animation-delay:.31s}
+  /* prihlásenie a kredity: veľké tlačidlá pod sebou */
+  #login .card,#credits .card{max-width:440px;text-align:center}
+
+  /* domovská obrazovka: veliteľský panel (radar + prístrojové tabule) namiesto zoznamu tlačidiel */
+  #home .card{max-width:680px;text-align:center}
+  #home .cockpit{display:grid;grid-template-columns:150px 1fr;gap:16px;align-items:center;margin-top:14px}
+  #home .panelGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  #home #homeContBtn{width:100%;margin-top:12px}
+
+  #home .radarBtn{position:relative;width:150px;height:150px;border-radius:50%;cursor:pointer;touch-action:manipulation;
+    background:radial-gradient(circle at 50% 42%,#15351c,#061009 75%);border:4px solid #1c2e1c;
+    box-shadow:0 6px 0 #0c160c,inset 0 0 18px rgba(0,0,0,.7),0 0 26px rgba(95,224,120,.25);
+    display:flex;align-items:center;justify-content:center;overflow:hidden;animation:panelIn .45s ease both .05s;
+    transition:transform .12s ease,box-shadow .12s ease}
+  #home .radarBtn:hover{transform:translateY(-2px) scale(1.02);box-shadow:0 8px 0 #0c160c,inset 0 0 18px rgba(0,0,0,.7),0 0 36px rgba(95,224,120,.4)}
+  #home .radarBtn:active{transform:translateY(3px) scale(.99);box-shadow:0 2px 0 #0c160c,inset 0 0 18px rgba(0,0,0,.7),0 0 20px rgba(95,224,120,.3)}
+  #home .radarBtn .ring{position:absolute;border:1px solid rgba(95,224,120,.35);border-radius:50%}
+  #home .radarBtn .ring1{inset:16px}
+  #home .radarBtn .ring2{inset:32px}
+  #home .radarBtn .ring3{inset:48px}
+  #home .radarBtn .sweep{position:absolute;inset:4px;border-radius:50%;
+    background:conic-gradient(from 0deg,rgba(95,224,120,.55),transparent 26%,transparent 100%);
+    animation:radarSpin 3.2s linear infinite;mix-blend-mode:screen}
+  #home .radarBtn .core{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:2px;
+    color:#d9ffe0;text-shadow:0 0 10px rgba(95,224,120,.8)}
+  #home .radarBtn .core b{font-size:26px;line-height:1}
+  #home .radarBtn .core span{font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+  @keyframes radarSpin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+  @keyframes panelIn{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
+
+  #home .panelBtn{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+    padding:12px 8px;border-radius:10px;cursor:pointer;touch-action:manipulation;min-height:64px;
+    background:linear-gradient(180deg,#333d55,#20283d 60%,#171d2e);border:2px solid #0f1420;color:#eef2f8;
+    box-shadow:0 4px 0 #0f1420,inset 0 1px 0 rgba(255,255,255,.12);animation:panelIn .4s ease both;
+    transition:transform .12s ease,box-shadow .12s ease,filter .12s ease}
+  #home .panelBtn:nth-child(1){animation-delay:.08s}
+  #home .panelBtn:nth-child(2){animation-delay:.13s}
+  #home .panelBtn:nth-child(3){animation-delay:.18s}
+  #home .panelBtn:nth-child(4){animation-delay:.23s}
+  #home .panelBtn:hover{filter:brightness(1.14);transform:translateY(-1px);box-shadow:0 6px 0 #0f1420,inset 0 1px 0 rgba(255,255,255,.18)}
+  #home .panelBtn:active{transform:translateY(3px);box-shadow:0 1px 0 #0f1420,inset 0 1px 0 rgba(255,255,255,.1)}
+  #home .panelBtn .pIcon{font-size:22px;filter:drop-shadow(0 2px 2px rgba(0,0,0,.5))}
+  #home .panelBtn .pLabel{font-size:12.5px;font-weight:800;letter-spacing:.02em}
+
+  #home .dashRow{display:flex;gap:8px;margin-top:12px;justify-content:center}
+  #home .dashBtn{flex:1;max-width:140px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 6px;border-radius:8px;
+    background:linear-gradient(180deg,#242a3a,#171b26);border:1px solid rgba(255,255,255,.1);color:#9aa3b8;cursor:pointer;touch-action:manipulation;
+    transition:transform .12s ease,color .12s ease,background .12s ease}
+  #home .dashBtn:hover{color:#eef2f8;background:linear-gradient(180deg,#2c3346,#1d2232);transform:translateY(-1px)}
+  #home .dashBtn:active{transform:translateY(1px)}
+  #home .dashBtn .pIcon{font-size:16px}
+  #home .dashBtn .pLabel{font-size:10px;font-weight:700}
+
+  @media (max-width:640px){
+    #home .cockpit{grid-template-columns:1fr;gap:12px}
+    #home .radarBtn{width:120px;height:120px;justify-self:center}
+    #home .radarBtn .core b{font-size:22px}
+  }
   .achRow{display:flex;align-items:center;gap:12px;padding:10px 8px;border-top:1px solid rgba(255,255,255,.08);border-radius:8px;transition:background .12s ease}
   .achRow:hover{background:rgba(255,255,255,.04)}
   .achRow .achIcon{font-size:26px;width:38px;text-align:center;flex:none;filter:grayscale(1) opacity(.35)}
@@ -358,16 +404,26 @@
     <p id="homeGreet"></p>
     <div id="homeDailyCard" style="display:none"></div>
     <button class="btn" id="homeImportBtn" style="display:none;width:100%;margin:-2px 0 10px;animation:waitPulse 1.8s ease-in-out infinite"></button>
-    <div class="homeRow">
-      <button class="btn" id="homePlayBtn">▶ Hrať teraz</button>
-      <button class="btn alt" id="homeContBtn" style="display:none"></button>
-      <button class="btn alt" id="homeStoryBtn">📖 Kampaň</button>
-      <button class="btn alt" id="homeOnlineBtn">🌐 Multiplayer</button>
-      <button class="btn alt" id="homeAchBtn">🏆 Odznaky</button>
-      <button class="btn alt" id="homePerksBtn">🎖️ Vylepšenia</button>
-      <button class="btn alt" id="homeSettingsBtn">⚙ Nastavenia</button>
-      <button class="btn alt" id="homeCreditsBtn">📜 Kredity</button>
-      <button class="btn alt" id="homeLogoutBtn">🚪 Odhlásiť</button>
+
+    <div class="cockpit">
+      <button class="radarBtn" id="homePlayBtn" title="Hrať teraz">
+        <span class="ring ring3"></span><span class="ring ring2"></span><span class="ring ring1"></span>
+        <span class="sweep" aria-hidden="true"></span>
+        <span class="core"><b>▶</b><span>Hrať</span></span>
+      </button>
+      <div class="panelGrid">
+        <button class="panelBtn" id="homeStoryBtn"><span class="pIcon">🗺️</span><span class="pLabel">Kampaň</span></button>
+        <button class="panelBtn" id="homeOnlineBtn"><span class="pIcon">📡</span><span class="pLabel">Multiplayer</span></button>
+        <button class="panelBtn" id="homeAchBtn"><span class="pIcon">🏅</span><span class="pLabel">Odznaky</span></button>
+        <button class="panelBtn" id="homePerksBtn"><span class="pIcon">🎖️</span><span class="pLabel">Vylepšenia</span></button>
+      </div>
+    </div>
+    <button class="btn alt" id="homeContBtn" style="display:none"></button>
+
+    <div class="dashRow">
+      <button class="dashBtn" id="homeSettingsBtn"><span class="pIcon">⚙</span><span class="pLabel">Nastavenia</span></button>
+      <button class="dashBtn" id="homeCreditsBtn"><span class="pIcon">📜</span><span class="pLabel">Kredity</span></button>
+      <button class="dashBtn" id="homeLogoutBtn"><span class="pIcon">🚪</span><span class="pLabel">Odhlásiť</span></button>
     </div>
   </div>
 </div>
