@@ -127,13 +127,18 @@ const AMMO = {
   carpet:    { name: 'Koberec bômb',     icon: 'KB', speed: 640, dmg: 0,  splash: 0,   crater: 0,   color: '#ff3d3d', strike: 10, cap: 2 },
   nukeS:     { name: 'Malá atómovka',    icon: '☢1', speed: 560, dmg: 90, splash: 130, crater: 95,  color: '#fff27a', flash: 0.75, cap: 3 },
   nukeL:     { name: 'Veľká atómovka',   icon: '☢2', speed: 540, dmg: 150, splash: 210, crater: 150, color: '#ffffff', flash: 1, cap: 2 },
+  // generálske dary z kampane (exkluzívne - nedajú sa kúpiť v obchode, dostaneš ich len za dokončenie planéty od jej generála)
+  liberCannon: { name: 'Oslobodzovacie delo', icon: 'LD', speed: 640, dmg: 0,  splash: 0,  crater: 0,  color: '#ffd54a', strike: 8,  cap: 2 },
+  gravBlast:   { name: 'Azimutov gravitačný náboj', icon: 'AG', speed: 600, dmg: 20, splash: 65, crater: 22, color: '#8cff7a', stun: true, cap: 3 },
+  alienSwarm:  { name: 'Novin alienský roj', icon: 'NR', speed: 600, dmg: 14, splash: 26, crater: 12, color: '#c9ff4a', cluster: 20, cap: 2 },
+  alterStorm:  { name: 'Alterova plazmová búrka', icon: 'AB', speed: 580, dmg: 28, splash: 65, crater: 55, color: '#c15bff', volcano: 22, cap: 2 },
   // podmunícia (nedá sa kúpiť)
   bomblet:   { name: 'Bombička', icon: '', speed: 1, dmg: 10, splash: 30, crater: 12, color: '#ffcc55' },
   shard:     { name: 'Črep',     icon: '', speed: 1, dmg: 22, splash: 36, crater: 16, color: '#7ad7ff' },
   lava:      { name: 'Láva',     icon: '', speed: 1, dmg: 12, splash: 28, crater: 10, color: '#ff6a2a' },
   bomb:      { name: 'Bomba',    icon: '', speed: 1, dmg: 34, splash: 48, crater: 24, color: '#ff9d4a' },
 };
-const ORDER = ['ap', 'missile', 'he', 'bounce', 'ricochet', 'dirt', 'tele', 'repair', 'repairBig', 'laser', 'emp', 'empBig', 'pine', 'chain', 'shower', 'meteor', 'volcano', 'firestorm', 'airstrike', 'carpet', 'seismic', 'nukeS', 'nukeL'];
+const ORDER = ['ap', 'missile', 'he', 'bounce', 'ricochet', 'dirt', 'tele', 'repair', 'repairBig', 'laser', 'emp', 'empBig', 'pine', 'chain', 'shower', 'meteor', 'volcano', 'firestorm', 'airstrike', 'carpet', 'seismic', 'nukeS', 'nukeL', 'liberCannon', 'gravBlast', 'alienSwarm', 'alterStorm'];
 const capOf = id => AMMO[id].cap || 9;
 
 // ---------- úrovne zbraní (vylepšenie poškodenia za peniaze, kupuje sa v obchode) ----------
@@ -796,6 +801,98 @@ const STORY_MISSIONS = [
     win: 'Najvyššia Veliteľka Lucifer je porazená! Zem, Mesiac, Mars aj Venuša sú slobodné. Si najlepší tankový veliteľ v histórii celej slnečnej sústavy.',
     lose: 'Aj najvyššie veliteľky sa dajú poraziť. Nabudúce to dokážeš, veliteľ – toto je posledný krok.' },
 ];
+// ---------- generáli kampane: pred prvou misiou planéty ťa uvítajú a vysvetlia príbeh, po poslednej misii planéty ťa odmenia
+// exkluzívnou zbraňou, ktorá sa nedá kúpiť. Príbeh nadväzuje presne na text misií vyššie (zrada generála Armstronga na
+// Mesiaci, mimozemská flotila Overlorda Thessaraxa na Marse, ktorá dostávala rozkazy priamo od Lucifer na Venuši). ----------
+const GENERALS = {
+  earth: { name: 'Generálka Zora', title: 'Veliteľka pozemských síl', icon: '🎖️',
+    intro: [
+      'Vitaj vo Velení, veliteľ. Som generálka Zora a od tejto chvíle preberáš prvú líniu obrany Zeme.',
+      'Pred troma týždňami zaútočila na naše základne súkromná armáda, ktorá si hovorí Železná aliancia. Vypálili sklad paliva pri hraniciach a zotročili posádku – musíme ich zastaviť skôr, než postúpia hlbšie do vnútrozemia.',
+      'Budeš postupovať líniu po línii, až k ich veleniu ukrytému v sopke. Ja ťa povedem na každom kroku. Veľa šťastia, veliteľ.',
+    ],
+    outro: [
+      'Dokázal si to, veliteľ. Posledná bašta Železnej aliancie padla a Zem je znova slobodná.',
+      'Pri výsluchu zajatých dôstojníkov sme zistili znepokojivú vec – Železná aliancia nikdy nekonala sama. Niekto ich zásoboval technológiou, akú sme tu ešte nevideli. A ten signál vedie na Mesiac.',
+      'Toto je môj posledný dar, veliteľ – Oslobodzovacie delo, vyvinuté práve pre teba. Zvyšok tejto vojny už povedie môj kolega, generál Azimut z Mesačnej základne. Veľa šťastia tam hore.',
+    ],
+    reward: { ammoId: 'liberCannon', qty: 2, xp: 400 } },
+  moon: { name: 'Generál Azimut', title: 'Veliteľ Mesačnej základne', icon: '🛰️',
+    intro: [
+      'Vitaj na Mesiaci, veliteľ. Som generál Azimut – Zora mi o tebe už všetko povedala.',
+      'Zvyšky Železnej aliancie sa stiahli sem a opevnili sa v kráteroch. Velí im muž, ktorého poznám len ako generála Armstronga – bývalý spojenec, ktorý zradil a predal naše tajomstvá neznámej mocnosti.',
+      'Nulová atmosféra tu znamená žiadny vietor, no nízka gravitácia poriadne predĺži dolet tvojich striel. Priprav sa a poď mi pomôcť dostať späť náš mesačný domov.',
+    ],
+    outro: [
+      'Armstrong je porazený, Mesiac je náš. Dobrá práca, veliteľ.',
+      'Signál, ktorý sme zachytili z jeho vysielača, nemá ľudský pôvod – opakujem, nemá ľudský pôvod. Vedie priamo na Mars a ja sám neviem, čo tam na teba čaká.',
+      'Zober si toto – gravitačný náboj, posledná vec, čo sme na základni ešte stihli zostrojiť. Na Marse ťa už čaká generálka Nova, naša najlepšia veliteľka prieskumu. Nech sa ti darí, veliteľ.',
+    ],
+    reward: { ammoId: 'gravBlast', qty: 3, xp: 550 } },
+  mars: { name: 'Generálka Nova', title: 'Veliteľka prieskumnej flotily', icon: '🔴',
+    intro: [
+      'Vitaj na Marse, veliteľ. Som generálka Nova – poviem to rovno: to, čo tu nájdeme, zmení všetko, čo sme si mysleli o tejto vojne.',
+      'Signál z Mesiaca patrí mimozemskej flotile, ktorá sa tu už dávno skrýva pod povrchom. Všetko nasvedčuje tomu, že práve ONI od začiatku vyzbrojovali a riadili Železnú alianciu na Zemi – my sme celý čas bojovali proti bábkam.',
+      'Ich veliteľ si hovorí Overlord Thessarax. Poď, ukážeme mu, že Zem sa nevzdáva ľahko.',
+    ],
+    outro: [
+      'Thessarax je zničený, veliteľ. Celá slnečná sústava si teraz môže konečne vydýchnuť – aspoň na chvíľu.',
+      'V jeho troskách sme našli súradnice posledného, najsilnejšieho signálu zo všetkých. Smeruje na Venušu – a podľa všetkého tam Thessarax dostával rozkazy, nie ich vydával.',
+      'Toto si zaslúžiš – alienský roj, postavený z korisnej technológie, akú si nikto na Zemi nevie ani len predstaviť. Na Venuši nie si sám, veliteľ. Niekto tam na teba už čaká.',
+    ],
+    reward: { ammoId: 'alienSwarm', qty: 2, xp: 700 } },
+  venus: { name: 'Veliteľ Alter', title: 'Vodca venušského odboja', icon: '👽',
+    intro: [
+      'Vitaj na Venuši, pozemšťan. Volám sa Alter – som posledný veliteľ odboja môjho ľudu.',
+      'Tá istá mocnosť, ktorú ste porazili na Marse, dobyla aj môj svet. Ich najvyššia veliteľka Lucifer vládne z trónu nad oblakmi už celé desaťročia – zotročila môj národ a z Venuše robila základňu pre ďalšie výboje, vrátane toho na Zemi.',
+      'Bojujem sám už príliš dlho. S tebou po boku máme konečne šancu to ukončiť – raz a navždy, pre oba naše svety.',
+    ],
+    outro: [
+      'Je po všetkom. Lucifer je porazená a môj ľud je po prvýkrát za desaťročia slobodný.',
+      'Nikdy nezabudnem, čo si pre nás urobil, veliteľ. Zem, Mesiac, Mars aj Venuša ti budú navždy vďačné.',
+      'Toto je moje posledné a najcennejšie poďakovanie – plazmová búrka, zbraň môjho vlastného ľudu. Nech ťa navždy chráni, priateľ. Si najlepší tankový veliteľ v histórii celej slnečnej sústavy.',
+    ],
+    reward: { ammoId: 'alterStorm', qty: 2, xp: 1000 } },
+};
+function ensureStoryFlags(progress) {   // lazy-init, rovnaký bezpečný vzor ako ensureDaily/ensureWeekly - nič nevymaže existujúci postup
+  if (!progress.introSeen) progress.introSeen = {};
+  if (!progress.rewarded) progress.rewarded = {};
+  return progress;
+}
+function catchUpWorldRewards(p) {   // hráči, ktorí planétu dokončili ešte pred touto aktualizáciou, dostanú darček generála dodatočne
+  if (!p || !p.story) return false;
+  const flags = ensureStoryFlags(p.story);
+  let changed = false;
+  Object.keys(GENERALS).forEach(w => {
+    const wm = worldMissions(w); if (!wm.length) return;
+    const lastI = wm[wm.length - 1].i;
+    if (p.story.unlocked > lastI && !flags.rewarded[w]) {
+      flags.rewarded[w] = true;
+      const rw = GENERALS[w].reward;
+      if (!p.storyLoadout) p.storyLoadout = { money: 0, ammo: {}, speedLvl: 0, armorLvl: 0, fuelLvl: 0, wlv: {}, shields: new Array(10).fill(0) };
+      if (!p.storyLoadout.ammo) p.storyLoadout.ammo = {};
+      p.storyLoadout.ammo[rw.ammoId] = Math.min(capOf(rw.ammoId), (p.storyLoadout.ammo[rw.ammoId] || 0) + rw.qty);
+      changed = true;
+    }
+  });
+  return changed;
+}
+function showGeneralDialog(world, kind, onDone) {
+  const g = GENERALS[world];
+  if (net.active || !g || !g[kind] || !g[kind].length) { if (onDone) onDone(); return; }
+  $('genDlgIcon').textContent = g.icon;
+  $('genDlgName').textContent = g.name;
+  $('genDlgTitle').textContent = g.title;
+  $('genDlgText').innerHTML = g[kind].map(p => '<p>' + esc(p) + '</p>').join('');
+  const rw = kind === 'outro' ? g.reward : null;
+  $('genDlgReward').style.display = rw ? '' : 'none';
+  if (rw) $('genDlgReward').innerHTML = '🎁 Nová zbraň: <b>' + esc(AMMO[rw.ammoId].name) + ' ×' + rw.qty + '</b> · +' + rw.xp + ' XP';
+  if (genDlgHandler) $('genDlgNext').removeEventListener('click', genDlgHandler);
+  genDlgHandler = () => { hide('generalDlg'); $('genDlgNext').removeEventListener('click', genDlgHandler); genDlgHandler = null; if (onDone) onDone(); };
+  $('genDlgNext').addEventListener('click', genDlgHandler);
+  show('generalDlg');
+}
+let genDlgHandler = null;
 // POZOR pre budúce úpravy kampane: postup prihláseného hráča sa odteraz ukladá v jeho PROFILE (PROF_KEY), nie pod touto
 // verziovanou kľúčou - takže ho pridávanie/úprava misií už nevymaže. Nové misie preto VŽDY len PRIPÁJAJ na koniec zoznamu
 // danej planéty (alebo pridaj celú novú planétu na koniec) - nikdy nevkladaj ani neprehadzuj misie v strede existujúceho
@@ -819,6 +916,10 @@ let story = { active: false, idx: null, progress: null };
 function refreshStoryProgressSource() {   // volať vždy po zmene prihlásenia hráča v slote 0 - kampaň patrí aktuálne prihlásenému hráčovi
   const nick = setup.players[0].nick;
   story.progress = nick ? storyProgressForNick(nick) : (loadLegacyGlobalStoryProgress() || defaultStoryProgress());
+  if (nick) {   // hráči, čo planétu dokončili ešte pred pridaním generálov, dostanú ich darček dodatočne (bez animácie dialógu, len potichu do výzbroje)
+    const p = getProfile(nick);
+    if (p && catchUpWorldRewards(p)) { saveProfiles(); setTimeout(() => banner('🎖️ Generáli ti do výzbroje poslali darčeky za už dokončené planéty!', 3600), 600); }
+  }
 }
 refreshStoryProgressSource();
 function saveStoryProgress() {
@@ -828,8 +929,22 @@ function saveStoryProgress() {
 function startStoryMission(idx) {
   const m = STORY_MISSIONS[idx];
   if (!m || idx >= story.progress.unlocked) return;
+  const w = missionWorld(m);
+  if (worldMissions(w)[0].i === idx) {   // prvá misia planéty - ak ešte generál nepozdravil, najprv jeho úvod, misia sa spustí až po "Pokračovať"
+    const flags = ensureStoryFlags(story.progress);
+    if (!flags.introSeen[w]) {
+      flags.introSeen[w] = true; saveStoryProgress();
+      hide('story'); hide('menu');
+      showGeneralDialog(w, 'intro', () => startStoryMissionReal(idx));
+      return;
+    }
+  }
+  startStoryMissionReal(idx);
+}
+function startStoryMissionReal(idx) {
+  const m = STORY_MISSIONS[idx];
   stopGlobeLoop();
-  hide('story'); hide('dialog'); hide('menu'); hide('end');
+  hide('story'); hide('dialog'); hide('generalDlg'); hide('menu'); hide('end');
   initAudio(); fixColors(); saveSetup();
   setup.terrain = m.terrain; WIN_ROUNDS = m.rounds;
   story.active = true; story.idx = idx;
@@ -1789,14 +1904,28 @@ function afterRoundEnd() {
     $('endNormalBtns').style.display = ''; $('endStoryBtns').style.display = 'none';
     if (story.active) {
       const m = STORY_MISSIONS[story.idx], won = w === tanks[0];
-      if (won) { story.progress.unlocked = Math.max(story.progress.unlocked, story.idx + 2); story.progress.done[story.idx] = true; saveStoryProgress(); saveStoryLoadout(tanks[0]); }
+      let worldReward = null;
+      if (won) {
+        story.progress.unlocked = Math.max(story.progress.unlocked, story.idx + 2); story.progress.done[story.idx] = true;
+        const wld = missionWorld(m), wm = worldMissions(wld), flags = ensureStoryFlags(story.progress);
+        if (wm[wm.length - 1].i === story.idx && !flags.rewarded[wld]) {   // posledná misia planéty - darček od jej generála
+          flags.rewarded[wld] = true;
+          const rw = GENERALS[wld].reward;
+          tanks[0].ammo[rw.ammoId] = Math.min(capOf(rw.ammoId), (tanks[0].ammo[rw.ammoId] || 0) + rw.qty);
+          addXp(tanks[0], rw.xp);
+          worldReward = wld;
+        }
+        saveStoryProgress(); saveStoryLoadout(tanks[0]);
+      }
       recordStats(w);   // misie v kampani sa teraz tiež počítajú do štatistík profilu (zápasy/výhry/kolá)
       $('endTitle').textContent = won ? 'Misia splnená!' : 'Misia zlyhala';
       $('endTitle').style.color = won ? '#5fd35f' : '#e5484d';
       $('endSub').innerHTML = esc(won ? m.win : m.lose);
       $('endNormalBtns').style.display = 'none'; $('endStoryBtns').style.display = 'flex';
       $('storyNextBtn').style.display = (won && STORY_MISSIONS[story.idx + 1]) ? '' : 'none';
-      show('end'); if (net.active) netPublish(); return;
+      show('end'); if (net.active) netPublish();
+      if (worldReward) showGeneralDialog(worldReward, 'outro');
+      return;
     }
     const saved = recordStats(w);
     $('endTitle').textContent = w.name + ' vyhráva zápas!';
@@ -2789,8 +2918,12 @@ function shopRows(t) {
     const a = AMMO[k];
     if (k === 'ap') return { id: 'ap', ic: icon('AP', a.color), name: a.name, sub: 'základná, neobmedzená', price: 0, pack: '–', owned: '∞', fixed: true };
     const it = SHOP_ITEMS.find(i => i.id === k);
+    if (!it) {   // exkluzívna generálska zbraň - nedá sa kúpiť, v obchode sa ukáže len vtedy, keď ju už hráč dostal
+      if (!(t.ammo[k] > 0)) return null;
+      return { id: k, ic: icon(a.icon, a.color), name: a.name, sub: 'Dar generála – nedá sa kúpiť', price: 0, pack: '–', owned: t.ammo[k], fixed: true };
+    }
     return { id: k, ic: icon(a.icon, a.color), name: a.name, sub: it.desc, price: it.cost, pack: it.qty, owned: t.ammo[k], off: t.ammo[k] >= capOf(k), lock: it.unlock && t.level < it.unlock ? it.unlock : 0 };
-  });
+  }).filter(Boolean);
   const gear = SHOP_ITEMS.filter(i => i.kind !== 'ammo').map(it => {
     const st = itemState(t, it);
     const own = it.kind === 'fuel' ? Math.floor(t.fuel) : t[it.lvlKey];
