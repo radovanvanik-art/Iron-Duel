@@ -240,7 +240,7 @@ const ctx = cv.getContext('2d');
 // --- grafika: predrenderované vrstvy (obloha, terén, škvrny po výbuchoch), sprity tankov, adaptívna kvalita ---
 const M = 40;                                    // rezerva okolo scény kvôli trasenie obrazovky
 let gfx = 'auto', quality = 2, SCALE = Math.min(2, window.devicePixelRatio || 1), MAXP = 700;
-let skyL = null, terL = null, scorchL = null, vigL = null, terDirty = true, skyDirty = true, specks = [], stars = [];
+let skyL = null, terL = null, scorchL = null, vigL = null, terDirty = true, skyDirty = true, specks = [], stars = [], skyIsDark = false;
 let showFps = false, fpsEma = 16.7;
 const sprites = {};
 function mkLayer(w, h) {
@@ -276,7 +276,7 @@ let hills = [];
 let clouds = [];
 let wind = 0, gustPhase = 0;
 let trees = [], decor = [], weather = [], sun = { x: 900, y: 150 };
-let emitters = [], strikes = [], rings = [], glows = [], flash = 0;
+let emitters = [], strikes = [], rings = [], glows = [], flash = 0, treadMarks = [];
 let ammoMenu = { id: -1, t: 0 };   // zoznam zbraní, ktorý sa ukáže po zmene munície   // sopka, letecký útok, rázová vlna, záblesk
 let round = 1;
 let shopTimer = 0, endTimer = 0, shopPlayer = 0;
@@ -1681,7 +1681,7 @@ function genArena(key) {
   skyDirty = terDirty = true;
   if (scorchL) scorchL.x.clearRect(0, 0, W + 2 * M, H + 2 * M);
   specks = Array.from({ length: quality >= 1 ? 1300 : 450 }, () => ({ x: rand(-M, W + M), y: rand(230, H + M), r: rand(1, 2.6), a: Math.random() < 0.5 ? rand(0.05, 0.16) : -rand(0.05, 0.2) }));
-  stars = Array.from({ length: 110 }, () => ({ x: rand(0, W), y: rand(0, 330), r: rand(0.5, 1.5), a: rand(0.25, 0.9) }));
+  stars = Array.from({ length: 110 }, () => ({ x: rand(0, W), y: rand(0, 330), r: rand(0.5, 1.5), a: rand(0.25, 0.9), ph: rand(0, 6.28), tw: rand(0.5, 1.8) }));
   rollWind();
 }
 const spawnXs = n => n === 2 ? [135, 1145] : n === 3 ? [135, 640, 1145] : [135, 468, 812, 1145];
@@ -1707,6 +1707,10 @@ function scorch(x, y, r) {   // škvrna po výbuchu (kreslí sa do samostatnej v
   const c = scorchL.x, g = c.createRadialGradient(x + M, y + M, r * 0.15, x + M, y + M, r);
   g.addColorStop(0, 'rgba(0,0,0,.6)'); g.addColorStop(1, 'rgba(0,0,0,0)');
   c.fillStyle = g; c.beginPath(); c.arc(x + M, y + M, r, 0, 6.3); c.fill();
+}
+function addTreadMark(x, y, tilt) {   // stopa po páse tanku – kreslí sa priamo každý frame (nezapaľuje sa do vrstvy), sama dočasne zmizne
+  treadMarks.push({ x, y, tilt: tilt || 0, t: 0 });
+  if (treadMarks.length > 420) treadMarks.splice(0, treadMarks.length - 420);
 }
 
 // ---------- priebeh hry ----------
@@ -1752,7 +1756,7 @@ function toMenu() {
 }
 function enterShop(resume) {
   genArena(pickBiome());
-  projectiles = []; particles = []; beams = []; emitters = []; strikes = []; rings = []; glows = []; flash = 0;
+  projectiles = []; particles = []; beams = []; emitters = []; strikes = []; rings = []; glows = []; flash = 0; treadMarks = [];
   const sx = spawnXs(tanks.length);
   tanks.forEach((t, i) => placeTank(t, sx[i]));
   tanks.forEach(t => {
@@ -2099,6 +2103,11 @@ function explosion(x, y, type, ownerId) {
     spark(x, y, Math.cos(ang) * v, Math.sin(ang) * v - 60, i % 3 ? a.color : '#ffedb0', rand(.3, .8), rand(2, 2 + a.splash / 14), 300, 'glow');
   }
   for (let i = 0; i < 6; i++) spark(x, y, rand(-30, 30), rand(-70, -20), 'rgba(90,90,90,.7)', rand(.6, 1.1), rand(5, 10), -20);
+  const B2 = biome(), nd = Math.round(3 + a.splash / 16);   // rozlietané kusy zeme/skaly, tromfnú sa a padajú s rotáciou
+  for (let i = 0; i < nd && particles.length < MAXP; i++) {
+    const ang = rand(-2.55, -0.6), v = rand(90, 160 + a.splash * 1.3), life = rand(0.55, 1.2);
+    particles.push({ x, y, vx: Math.cos(ang) * v, vy: Math.sin(ang) * v, life, max: life, size: rand(3.5, 8), color: shade(B2.ground[1], rand(-25, 25)), grav: 480, fx: 'debris', rot: rand(0, 6.28), vrot: rand(-9, 9) });
+  }
   noise(0.25 + a.splash / 200, 0.2, 700); tone(140, 40, 0.25, 'sine', 0.1); vibrate(Math.min(55, 12 + a.splash / 4));
   shake = Math.max(shake, a.splash / 6);
   if (a.cluster) for (let i = 0; i < a.cluster; i++) {   // ananás sa rozpadne na malé bombičky
@@ -2123,6 +2132,7 @@ function updateSpecials(dt) {
   rings.forEach(r => { r.life -= dt; r.r += (r.max - r.r) * Math.min(1, dt * 5); });
   rings = rings.filter(r => r.life > 0);
   flash = Math.max(0, flash - dt * 1.4);
+  treadMarks.forEach(m => m.t += dt); treadMarks = treadMarks.filter(m => m.t < 16);
 }
 function killTree(tr, ownerId) {
   trees = trees.filter(k => k !== tr);
@@ -2184,6 +2194,10 @@ function updateTank(t, dt) {
       if (dir) t.fuel = Math.max(0, t.fuel - Math.abs(nx - t.x) * FUEL_PER_PX * B.fuel * (1 + 0.5 * Math.max(0, -slope * dir)));
       t.trackPhase = (t.trackPhase || 0) + (nx - t.x);
       if (quality > 0 && Math.random() < dt * 14) spark(t.x - Math.sign(vx) * 24 + rand(-4, 4), t.y, rand(-20, 20) - vx * 0.3, rand(-40, -12), dustCol(), 0.5, rand(3, 6), 40);
+      if (quality > 0) {   // koľajové stopy po pásoch, miznú po chvíli
+        t.treadAcc = (t.treadAcc || 0) + Math.abs(nx - t.x);
+        if (t.treadAcc >= 9) { t.treadAcc = 0; addTreadMark(t.x, t.y, t.tilt); }
+      }
       t.x = nx;
     } else t.vx = 0;
   }
@@ -2323,7 +2337,7 @@ function update(dt) {
   let pw = 0;   // aktualizácia častíc na mieste (bez alokácií)
   for (let i = 0; i < particles.length; i++) {
     const p = particles[i]; p.life -= dt; if (p.life <= 0) continue;
-    p.vy += p.grav * dt; p.x += p.vx * dt; p.y += p.vy * dt; if (p.fx === 'smoke') p.size += 9 * dt;
+    p.vy += p.grav * dt; p.x += p.vx * dt; p.y += p.vy * dt; if (p.fx === 'smoke') p.size += 9 * dt; if (p.vrot) p.rot += p.vrot * dt;
     particles[pw++] = p;
   }
   particles.length = pw;
@@ -2338,7 +2352,7 @@ function draw() {
   ctx.save();
   if (shake > 0) ctx.translate(rand(-shake, shake), rand(-shake, shake));
   ctx.translate(W / 2, H / 2); ctx.scale(cam.zoom, cam.zoom); ctx.translate(-cam.x, -cam.y);
-  drawSky(); drawTerrain(); drawDecor(); trees.forEach(drawTree); obstacles.forEach(drawObstacle);
+  drawSky(); drawTerrain(); drawTreadMarks(); drawDecor(); trees.forEach(drawTree); obstacles.forEach(drawObstacle);
   tanks.forEach(drawTank);
   drawTurnMarker();
   drawWeather();
@@ -2366,11 +2380,7 @@ function buildSky() {
   const g = x.createLinearGradient(0, -M, 0, H + M);
   g.addColorStop(0, B.sky[0]); g.addColorStop(0.55, B.sky[1]); g.addColorStop(1, B.sky[2]);
   x.fillStyle = g; x.fillRect(-M, -M, W + 2 * M, H + 2 * M);
-  if (lum(B.sky[0]) < 0.25) {
-    x.fillStyle = '#fff';
-    stars.forEach(st => { x.globalAlpha = st.a * (1 - st.y / 380); x.beginPath(); x.arc(st.x, st.y, st.r, 0, 6.3); x.fill(); });
-    x.globalAlpha = 1;
-  }
+  skyIsDark = lum(B.sky[0]) < 0.25;   // hviezdy sa teraz kreslia animovane (blikanie + paralax) v drawSky(), nie sem natrvalo
   if (biomeKey === 'winter') {   // polárna žiara
     for (let k = 0; k < 3; k++) {
       const ag = x.createLinearGradient(0, 40 + k * 30, 0, 230 + k * 30);
@@ -2395,6 +2405,16 @@ function buildSky() {
 function drawSky() {
   if (skyDirty) buildSky();
   ctx.drawImage(skyL.c, -M, -M, W + 2 * M, H + 2 * M);
+  if (skyIsDark) {   // hviezdy blikajú a posúvajú sa pomalšie než kamera (paralax = pôsobia vzdialenejšie)
+    const px = cam.x * 0.72;
+    ctx.fillStyle = '#fff';
+    stars.forEach(st => {
+      const tw = 0.7 + 0.3 * Math.sin(time * st.tw + st.ph), sx = ((st.x + px) % W + W) % W;
+      ctx.globalAlpha = st.a * (1 - st.y / 380) * tw;
+      ctx.beginPath(); ctx.arc(sx, st.y, st.r, 0, 6.3); ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+  }
   ctx.fillStyle = 'rgba(255,255,255,.16)';
   clouds.forEach(c => { ctx.beginPath(); ctx.ellipse(c.x, c.y, 70 * c.s, 18 * c.s, 0, 0, 6.3); ctx.ellipse(c.x + 30 * c.s, c.y - 10 * c.s, 40 * c.s, 16 * c.s, 0, 0, 6.3); ctx.ellipse(c.x - 34 * c.s, c.y - 4 * c.s, 34 * c.s, 13 * c.s, 0, 0, 6.3); ctx.fill(); });
 }
@@ -2432,6 +2452,18 @@ function buildTerrain() {
 function drawTerrain() {
   if (terDirty) buildTerrain();
   ctx.drawImage(terL.c, -M, -M, W + 2 * M, H + 2 * M);
+}
+function drawTreadMarks() {   // stopy po pásoch na zemi – kreslia sa priamo nad terénom, postupne vyblednú a zmiznú
+  if (!treadMarks.length) return;
+  ctx.fillStyle = 'rgba(15,12,10,.5)';
+  treadMarks.forEach(m => {
+    const f = clamp(1 - m.t / 16, 0, 1); if (f <= 0) return;
+    ctx.globalAlpha = f * 0.4;
+    ctx.save(); ctx.translate(m.x, m.y + 2); ctx.rotate(m.tilt);
+    ctx.fillRect(-10, -1, 20, 2);
+    ctx.restore();
+  });
+  ctx.globalAlpha = 1;
 }
 function drawTree(tr) {
   const x = tr.x, y = gy(tr.x), h = tr.h, w = tr.w, cols = ['#1f5a32', '#2a7040', '#35853f'];
@@ -2765,6 +2797,7 @@ function drawParticles() {
     const p = particles[i]; if (p.text || p.fx === 'glow') continue;
     ctx.globalAlpha = clamp(p.life / p.max, 0, 1) * (p.fx === 'smoke' ? 0.85 : 1); ctx.fillStyle = p.color;
     if (p.fx === 'smoke') { ctx.beginPath(); ctx.arc(p.x, p.y, p.size * 0.6, 0, 6.3); ctx.fill(); }
+    else if (p.fx === 'debris') { ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot || 0); ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size); ctx.restore(); }
     else ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
   }
   ctx.globalCompositeOperation = 'lighter';   // iskry a oheň sa sčítavajú
