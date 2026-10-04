@@ -2838,7 +2838,7 @@ function renderShop() {
     rowHead('Úrovne zbraní (+poškodenie)') + rows.wlevels.map(r => rowHtml(t, r)).join('') + '</div>' +
     '<div class="col">' + rowHead('Štíty L1–L10') + rows.shields.map(r => rowHtml(t, r)).join('') +
     rowHead('Palivo a vylepšenia') + rows.gear.map(r => rowHtml(t, r)).join('') + '</div></div>' +
-    '<button class="startbtn" data-ready="' + t.id + '"' + (ready[t.id] ? ' disabled' : '') + '>' + (ready[t.id] ? 'PRIPRAVENÝ ✓' : 'START!') + '</button>';
+    '<div class="shopActionBar"><button class="startbtn" data-ready="' + t.id + '"' + (ready[t.id] ? ' disabled' : '') + '>' + (ready[t.id] ? 'PRIPRAVENÝ ✓' : 'START!') + '</button></div>';
   $('shopBody').scrollTop = top;
   saveGame();
 }
