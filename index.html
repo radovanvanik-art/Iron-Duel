@@ -13,7 +13,7 @@
   @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b0f18}}
   :root[data-theme="dark"]{--bg:#0b0f18}
   html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:system-ui,Segoe UI,Roboto,sans-serif;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;overscroll-behavior:none}
-  #stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+  #stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
   canvas{display:block;background:#000;touch-action:none}
   body[data-state="play"] canvas{cursor:crosshair}
   .biome{background:linear-gradient(135deg,rgba(120,200,255,.1),rgba(120,200,255,.03));border:1px solid rgba(120,200,255,.28);border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:13px;color:var(--muted);line-height:1.4;box-shadow:0 2px 10px rgba(0,0,0,.2)}
@@ -521,7 +521,7 @@
     <details class="info">
       <summary>ℹ Ako sa hrá (ovládanie, zbrane, ekonomika…)</summary>
       <ul>
-        <li><b>Myš:</b> pohybom kurzora mieriš (smer aj sila podľa vzdialenosti od tanku), ľavé tlačidlo strieľa, pravé mení muníciu (Shift + pravé = späť), koliesko upravuje silu. Bodky ukazujú celú dráhu strely vrátane vetra a <b>žltý terč</b> značí predpokladané miesto dopadu – podľa neho vieš mierenie doladiť aj v silnom vetre.</li>
+        <li><b>Myš:</b> pohybom kurzora mieriš (smer aj sila podľa vzdialenosti od tanku), ľavé tlačidlo strieľa, pravé mení muníciu (Shift + pravé = späť), koliesko upravuje silu. Farebný pásik pri tanku ukazuje silu výstrelu.</li>
         <li><b>Terény (9):</b> Lúka, Púšť, Zima, Les, Hory, Kaňon, Bažina, <b>Sopka</b> a <b>Pláž</b> sa generujú náhodne pred každým kolom (alebo si vyber konkrétnu). Každý mení vietor (silu, nárazovosť, smer), odpor vzduchu, gravitáciu, veľkosť kráterov a jazdu. Popis mapy uvidíš v obchode.</li>
         <li><b>Obtiažnosť:</b> Ľahká/Normálna/Ťažká mení silu a nárazovosť vetra pre celý zápas – ak ťa vietor stále rozhadzuje, skús ľahšiu. Oceľové bloky v teréne sa teraz dajú zničiť (sú len odolnejšie), takže sa za nimi už nedá zaseknúť.</li>
         <li><b>🎯 Vedľajšie misie:</b> každé kolo dostaneš v obchode náhodnú mini-výzvu (priamy zásah, zničiť budovu, zabiť súpera, prežiť bez zásahu…) za bonus € a XP navyše.</li>
@@ -719,4 +719,4 @@
     window.__firestoreDb = firebase.firestore();
   } catch (_) { /* mimo web hostingu (napr. Claude Artifact) - použije sa záložné window.claude db */ }
 </script>
-<script src="game.js?v=20"></script>
+<script src="game.js?v=21"></script>

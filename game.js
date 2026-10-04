@@ -239,7 +239,8 @@ const AMMO_CAP = 9;   // predvolený strop; jednotlivé zbrane majú vlastný (c
 const cv = document.getElementById('game');
 const ctx = cv.getContext('2d');
 // --- grafika: predrenderované vrstvy (obloha, terén, škvrny po výbuchoch), sprity tankov, adaptívna kvalita ---
-const M = 40;                                    // rezerva okolo scény kvôli trasenie obrazovky
+const M = 40;                                    // rezerva okolo scény kvôli trasenie obrazovky (vodorovne)
+let VM = M;                                       // zvislá rezerva vrstiev oblohy/terénu - pri oddialenej kamere (veľká mapa) treba vidieť viac aj nahor/nadol, nielen do strán
 let gfx = 'auto', quality = 2, SCALE = Math.min(2, window.devicePixelRatio || 1), MAXP = 700;
 let skyL = null, terL = null, scorchL = null, vigL = null, terDirty = true, skyDirty = true, specks = [], stars = [], skyIsDark = false;
 let showFps = false, fpsEma = 16.7;
@@ -249,8 +250,10 @@ function mkLayer(w, h) {
   const x = c.getContext('2d'); x.setTransform(SCALE, 0, 0, SCALE, 0, 0); return { c, x };
 }
 function mkWorldLayers() {   // vrstvy a pole terénu podľa aktuálnej šírky SVETA (WORLD_W) - znova sa vytvoria pri zmene veľkosti mapy aj kvality
+  const fitZoom = Math.min(1, W / WORLD_W);   // rovnaké priblíženie, aké si kamera natrvalo drží (vidno celú mapu)
+  VM = Math.ceil(M + Math.max(0, (H / fitZoom - H) / 2));   // pri oddialení (veľká mapa) je vidno aj viac nahor/nadol, nielen do šírky
   ground = new Float32Array(WORLD_W + 1);
-  skyL = mkLayer(WORLD_W + 2 * M, H + 2 * M); terL = mkLayer(WORLD_W + 2 * M, H + 2 * M); scorchL = mkLayer(WORLD_W + 2 * M, H + 2 * M);
+  skyL = mkLayer(WORLD_W + 2 * M, H + 2 * VM); terL = mkLayer(WORLD_W + 2 * M, H + 2 * VM); scorchL = mkLayer(WORLD_W + 2 * M, H + 2 * VM);
   skyDirty = terDirty = true;
 }
 function setupCanvas() {
@@ -293,10 +296,8 @@ let turnIdx = 0, turnPhase = 'aim', turnTimer = 0, settle = 0;   // ťahový re�
 let shake = 0;
 let time = 0;
 let lastResult = '';
-// ---------- kamera (priblíženie na tank/strelu, nech je na mobile/fullscreen dobre vidno) ----------
-const CAM_ZOOM = 1.7, CAM_ZOOM_FLIGHT = 1.45;
+// ---------- kamera (statická, vždy vycentrovaná tak, aby bolo vidno celú mapu a všetkých hráčov) ----------
 let cam = { x: W / 2, y: H / 2, zoom: 1 };
-let camZoomOn = true;
 let lastImpact = null;
 
 const held = [{}, {}, {}, {}];   // dotykové tlačidlá
@@ -936,6 +937,7 @@ function saveStoryProgress() {
 function startStoryMission(idx) {
   const m = STORY_MISSIONS[idx];
   if (!m || idx >= story.progress.unlocked) return;
+  goFullscreen();
   const w = missionWorld(m);
   if (worldMissions(w)[0].i === idx) {   // prvá misia planéty - ak ešte generál nepozdravil, najprv jeho úvod, misia sa spustí až po "Pokračovať"
     const flags = ensureStoryFlags(story.progress);
@@ -1693,7 +1695,7 @@ function genArena(key) {
   const wn = { snow: 130, dust: 70, leaf: 38, mist: 9, pollen: 26 }[B.weather] || 0;
   for (let i = 0; i < wn; i++) weather.push({ x: rand(0, WORLD_W), y: B.weather === 'mist' ? rand(300, 560) : rand(0, H * 0.92), s: rand(0.6, 1.6), ph: rand(0, 6.28) });
   skyDirty = terDirty = true;
-  if (scorchL) scorchL.x.clearRect(0, 0, WORLD_W + 2 * M, H + 2 * M);
+  if (scorchL) scorchL.x.clearRect(0, 0, WORLD_W + 2 * M, H + 2 * VM);
   const wScale = WORLD_W / W;   // na väčšej mape pridaj úmerne viac prachu/hviezd, nech dekorácia nepôsobí riedko
   specks = Array.from({ length: Math.round((quality >= 1 ? 1300 : 450) * wScale) }, () => ({ x: rand(-M, WORLD_W + M), y: rand(230, H + M), r: rand(1, 2.6), a: Math.random() < 0.5 ? rand(0.05, 0.16) : -rand(0.05, 0.2) }));
   stars = Array.from({ length: Math.round(110 * wScale) }, () => ({ x: rand(0, WORLD_W), y: rand(0, 330), r: rand(0.5, 1.5), a: rand(0.25, 0.9), ph: rand(0, 6.28), tw: rand(0.5, 1.8) }));
@@ -1723,9 +1725,9 @@ function carve(cx, cy, r) {
 }
 function scorch(x, y, r) {   // škvrna po výbuchu (kreslí sa do samostatnej vrstvy)
   if (!scorchL) return;
-  const c = scorchL.x, g = c.createRadialGradient(x + M, y + M, r * 0.15, x + M, y + M, r);
+  const c = scorchL.x, g = c.createRadialGradient(x + M, y + VM, r * 0.15, x + M, y + VM, r);
   g.addColorStop(0, 'rgba(0,0,0,.6)'); g.addColorStop(1, 'rgba(0,0,0,0)');
-  c.fillStyle = g; c.beginPath(); c.arc(x + M, y + M, r, 0, 6.3); c.fill();
+  c.fillStyle = g; c.beginPath(); c.arc(x + M, y + VM, r, 0, 6.3); c.fill();
 }
 function addTreadMark(x, y, tilt) {   // stopa po páse tanku – kreslí sa priamo každý frame (nezapaľuje sa do vrstvy), sama dočasne zmizne
   treadMarks.push({ x, y, tilt: tilt || 0, t: 0 });
@@ -2293,20 +2295,9 @@ function bounceFx(p) {
 }
 function updateCamera(dt) {
   if (lastImpact) { lastImpact.t -= dt; if (lastImpact.t <= 0) lastImpact = null; }
-  let tx = WORLD_W / 2, ty = H / 2, tz = 1;
-  if (camZoomOn && state === 'play') {
-    const t = tanks[turnIdx];
-    if (turnPhase === 'aim' && t && !t.dead) { tx = t.x; ty = t.y - 40; tz = CAM_ZOOM; }
-    else if (projectiles.length) {
-      let sx = 0, sy = 0; projectiles.forEach(p => { sx += p.x; sy += p.y; });
-      tx = sx / projectiles.length; ty = sy / projectiles.length; tz = CAM_ZOOM_FLIGHT;
-    } else if (beams.length) {
-      const b = beams[beams.length - 1]; tx = (b.x1 + b.x2) / 2; ty = (b.y1 + b.y2) / 2; tz = CAM_ZOOM_FLIGHT;
-    } else if (strikes.length) { tx = strikes[0].x; ty = groundAvg(strikes[0].x) - 60; tz = CAM_ZOOM_FLIGHT; }
-    else if (lastImpact) { tx = lastImpact.x; ty = lastImpact.y; tz = CAM_ZOOM_FLIGHT + Math.min(0.35, (lastImpact.mag || 0) / 350); }
-    else if (t && !t.dead) { tx = t.x; ty = t.y - 40; tz = CAM_ZOOM; }
-  }
-  const k = 1 - Math.pow(0.0025, Math.min(0.1, dt));   // plynulé tlmené sledovanie (framerate-nezávislé)
+  // žiadne priblíženie na aktuálny ťah/strelu - kamera stále statická a vycentrovaná, nech je vidno celú mapu a všetkých hráčov naraz
+  const tx = WORLD_W / 2, ty = H / 2, tz = Math.min(1, W / WORLD_W);
+  const k = 1 - Math.pow(0.0025, Math.min(0.1, dt));   // plynulé tlmené dorovnanie (framerate-nezávislé), hlavne pri zmene veľkosti mapy
   cam.x += (tx - cam.x) * k; cam.y += (ty - cam.y) * k; cam.zoom += (tz - cam.zoom) * k;
   const halfW = W / cam.zoom / 2, halfH = H / cam.zoom / 2;
   cam.x = clamp(cam.x, halfW, WORLD_W - halfW); cam.y = clamp(cam.y, halfH, H - halfH);
@@ -2396,11 +2387,11 @@ function drawTurnMarker() {
 }
 function buildSky() {
   const B = biome(), x = skyL.x;
-  x.setTransform(SCALE, 0, 0, SCALE, 0, 0); x.clearRect(0, 0, WORLD_W + 2 * M, H + 2 * M);
-  x.save(); x.translate(M, M);
-  const g = x.createLinearGradient(0, -M, 0, H + M);
+  x.setTransform(SCALE, 0, 0, SCALE, 0, 0); x.clearRect(0, 0, WORLD_W + 2 * M, H + 2 * VM);
+  x.save(); x.translate(M, VM);
+  const g = x.createLinearGradient(0, -VM, 0, H + VM);
   g.addColorStop(0, B.sky[0]); g.addColorStop(0.55, B.sky[1]); g.addColorStop(1, B.sky[2]);
-  x.fillStyle = g; x.fillRect(-M, -M, WORLD_W + 2 * M, H + 2 * M);
+  x.fillStyle = g; x.fillRect(-M, -VM, WORLD_W + 2 * M, H + 2 * VM);
   skyIsDark = lum(B.sky[0]) < 0.25;   // hviezdy sa teraz kreslia animovane (blikanie + paralax) v drawSky(), nie sem natrvalo
   if (biomeKey === 'winter') {   // polárna žiara
     for (let k = 0; k < 3; k++) {
@@ -2417,15 +2408,15 @@ function buildSky() {
   hills.forEach(h => {
     const hg = x.createLinearGradient(0, h.base - h.a, 0, h.base + 140);
     hg.addColorStop(0, h.col); hg.addColorStop(1, shade(h.col, -28));
-    x.fillStyle = hg; x.beginPath(); x.moveTo(-M, H + M);
+    x.fillStyle = hg; x.beginPath(); x.moveTo(-M, H + VM);
     for (let px = -M; px <= WORLD_W + M; px += 16) x.lineTo(px, h.base + h.a * Math.sin(px * h.f + h.p));
-    x.lineTo(WORLD_W + M, H + M); x.fill();
+    x.lineTo(WORLD_W + M, H + VM); x.fill();
   });
   x.restore(); skyDirty = false;
 }
 function drawSky() {
   if (skyDirty) buildSky();
-  ctx.drawImage(skyL.c, -M, -M, WORLD_W + 2 * M, H + 2 * M);
+  ctx.drawImage(skyL.c, -M, -VM, WORLD_W + 2 * M, H + 2 * VM);
   if (skyIsDark) {   // hviezdy blikajú a posúvajú sa pomalšie než kamera (paralax = pôsobia vzdialenejšie)
     const px = cam.x * 0.72;
     ctx.fillStyle = '#fff';
@@ -2441,8 +2432,8 @@ function drawSky() {
 }
 function buildTerrain() {
   const B = biome(), x = terL.x;
-  x.setTransform(SCALE, 0, 0, SCALE, 0, 0); x.clearRect(0, 0, WORLD_W + 2 * M, H + 2 * M);
-  x.save(); x.translate(M, M);
+  x.setTransform(SCALE, 0, 0, SCALE, 0, 0); x.clearRect(0, 0, WORLD_W + 2 * M, H + 2 * VM);
+  x.save(); x.translate(M, VM);
   const trace = (off, step, wob) => {
     x.beginPath(); x.moveTo(-M, ground[0] + off);
     for (let px = 0; px <= WORLD_W; px += step) x.lineTo(px, ground[px] + off + (wob ? Math.sin(px * 0.02 + wob * 2) * 5 : 0));
@@ -2450,13 +2441,13 @@ function buildTerrain() {
   };
   const g = x.createLinearGradient(0, B.gtop, 0, H);
   g.addColorStop(0, B.ground[0]); g.addColorStop(B.gmid, B.ground[1]); g.addColorStop(1, B.ground[2]);
-  x.fillStyle = g; trace(0, 2); x.lineTo(WORLD_W + M, H + M); x.lineTo(-M, H + M); x.closePath(); x.fill();
+  x.fillStyle = g; trace(0, 2); x.lineTo(WORLD_W + M, H + VM); x.lineTo(-M, H + VM); x.closePath(); x.fill();
   x.globalCompositeOperation = 'source-atop';   // textúra len vo vnútri terénu
   x.lineWidth = 1.3; x.strokeStyle = 'rgba(0,0,0,.075)';
   for (let k = 1; k <= 6; k++) { trace(k * 38, 8, k); x.stroke(); }
   specks.forEach(sp => { x.fillStyle = sp.a > 0 ? 'rgba(255,255,255,' + sp.a + ')' : 'rgba(0,0,0,' + (-sp.a) + ')'; x.fillRect(sp.x, sp.y, sp.r, sp.r); });
   x.strokeStyle = 'rgba(0,0,0,.22)'; x.lineWidth = 16; trace(10, 4); x.stroke();      // tieň pod hranou
-  x.drawImage(scorchL.c, -M, -M, WORLD_W + 2 * M, H + 2 * M);                                // škvrny po výbuchoch
+  x.drawImage(scorchL.c, -M, -VM, WORLD_W + 2 * M, H + 2 * VM);                                // škvrny po výbuchoch
   x.globalCompositeOperation = 'source-over';
   x.strokeStyle = B.edge; x.lineWidth = 4; trace(0, 2); x.stroke();
   x.strokeStyle = 'rgba(255,255,255,.28)'; x.lineWidth = 1.4; trace(-1.5, 2); x.stroke();
@@ -2472,7 +2463,7 @@ function buildTerrain() {
 }
 function drawTerrain() {
   if (terDirty) buildTerrain();
-  ctx.drawImage(terL.c, -M, -M, WORLD_W + 2 * M, H + 2 * M);
+  ctx.drawImage(terL.c, -M, -VM, WORLD_W + 2 * M, H + 2 * VM);
 }
 function drawTreadMarks() {   // stopy po pásoch na zemi – kreslia sa priamo nad terénom, postupne vyblednú a zmiznú
   if (!treadMarks.length) return;
@@ -2551,29 +2542,8 @@ function drawWeather() {
     else if (kind === 'mist') { ctx.fillStyle = 'rgba(235,240,250,.07)'; ctx.beginPath(); ctx.ellipse(p.x, p.y, 200 * p.s, 26 * p.s, 0, 0, 6.3); ctx.fill(); }
   });
 }
-function previewPts(t) {
-  if (AMMO[t.sel].heal) return [];
-  if (t.sel === 'laser') { const m = muzzle(t); return [...Array(14).keys()].map(i => ({ x: m.x + m.dx * (40 + i * 34), y: m.y + m.dy * (40 + i * 34) })); }
-  const a = AMMO[t.sel], m = muzzle(t), sp = a.speed * powerMul(t.power);
-  const p = { x: m.x, y: m.y, vx: m.dx * sp, vy: m.dy * sp, type: t.sel, life: 0 }, pts = [];
-  for (let i = 0; i < 220; i++) {   // dosť krokov na celý dolet aj pri silnom vetre (nie len prvú sekundu letu)
-    stepShot(p, 1 / 30);
-    if (p.y >= gy(p.x) || p.x < 0 || p.x > WORLD_W || p.y > H) break;
-    pts.push({ x: p.x, y: p.y });
-  }
-  return pts;
-}
 function drawAimAids(t) {
   if (turnPhase !== 'aim') return;
-  const pts = previewPts(t);
-  if (pts.length && t.sel !== 'laser') {   // predpokladané miesto dopadu (zohľadňuje aj vietor počas celého letu)
-    const land = pts[pts.length - 1];
-    ctx.strokeStyle = '#ffd54a'; ctx.lineWidth = 2; ctx.globalAlpha = 0.85;
-    ctx.beginPath(); ctx.arc(land.x, land.y, 7, 0, 6.3); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(land.x - 11, land.y); ctx.lineTo(land.x - 4, land.y); ctx.moveTo(land.x + 4, land.y); ctx.lineTo(land.x + 11, land.y); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(land.x, land.y - 11); ctx.lineTo(land.x, land.y - 4); ctx.moveTo(land.x, land.y + 4); ctx.lineTo(land.x, land.y + 11); ctx.stroke();
-    ctx.globalAlpha = 1;
-  }
   const bw = 46;
   ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(t.x - bw / 2, t.y + 10, bw, 6);
   ctx.fillStyle = 'hsl(' + (120 - t.power * 1.1) + ',90%,55%)'; ctx.fillRect(t.x - bw / 2, t.y + 10, bw * t.power / 100, 6);
@@ -3671,8 +3641,10 @@ cv.addEventListener('pointermove', e => { if (e.pointerType === 'mouse') { mouse
 // zmena veľkosti (celá obrazovka bez okrajov, aj keď mobil skryje/zobrazí lištu prehliadača)
 function resize() {
   const vv = window.visualViewport, vw = (vv && vv.width) || innerWidth, vh = (vv && vv.height) || innerHeight;
-  const s = Math.min(vw / W, vh / H);
-  cv.style.width = Math.floor(W * s) + 'px'; cv.style.height = Math.floor(H * s) + 'px';
+  // na šírku (bežná hracia poloha) vyplní celú obrazovku bez čiernych pruhov (mierne orezané hore/dole);
+  // na výšku radšej nič neoreže (vľavo/vpravo je HUD aj ovládanie), takže tam ostáva doskalovanie na celú šírku/výšku bez orezu
+  const s = vw >= vh ? Math.max(vw / W, vh / H) : Math.min(vw / W, vh / H);
+  cv.style.width = Math.ceil(W * s) + 'px'; cv.style.height = Math.ceil(H * s) + 'px';
   positionPads();
   if (GLOBE.canvas) globeResize();
 }
