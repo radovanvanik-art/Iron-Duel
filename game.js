@@ -1200,7 +1200,7 @@ $('storyBackBtn').addEventListener('click', () => { hide('end'); focusFrontierWo
 // ostatné iba prijímajú a vykresľujú posledný synchronizovaný stav. Žiadne dve zariadenia
 // nikdy nesimulujú fyziku súčasne, takže sa nemôže nič rozísť.
 let dbCap = null, dbCapTried = false;
-const net = { active: false, code: null, myIdx: 0, maxN: 2, players: [], shopStep: 0, unsub: null, busy: false, queued: false, err: '' };
+const net = { active: false, spectator: false, code: null, myIdx: 0, maxN: 2, players: [], shopStep: 0, unsub: null, busy: false, queued: false, err: '' };
 let netLiveTimer = 0;   // throttle pre priebežné publikovanie mierenia/letu strely počas ťahu (nie len na začiatku/konci)
 async function ensureDb() {
   if (dbCap || dbCapTried) return dbCap;
@@ -1261,7 +1261,7 @@ function applyState(d) {
 }
 function syncPassiveUI() {   // pasívne zariadenie: prekresli obrazovky podľa prijatého stavu (samo nič nesimuluje)
   document.body.dataset.state = state;
-  if (state === 'shop') { shopPlayer = net.myIdx; renderShop(); show('shop'); hide('end'); }
+  if (state === 'shop') { shopPlayer = net.spectator ? net.shopStep : net.myIdx; renderShop(); show('shop'); hide('end'); }
   else if (state === 'matchEnd') {
     hide('shop');
     const w = tanks.find(t => t.wins >= WIN_ROUNDS) || tanks.slice().sort((a, b) => b.wins - a.wins)[0];
@@ -1289,7 +1289,8 @@ function netUpdateWaitBanner() {
   w.style.display = 'flex';
   const idx = state === 'shop' ? net.shopStep : turnIdx;
   const oppName = (tanks[idx] && tanks[idx].name) || 'Súper';
-  w.textContent = (state === 'shop' ? '🛒 ' + esc(oppName) + ' nakupuje výzbroj…' : '⏳ ' + esc(oppName) + ' je na ťahu…');
+  const prefix = net.spectator ? '👁️ ' : (state === 'shop' ? '🛒 ' : '⏳ ');
+  w.textContent = prefix + esc(oppName) + (state === 'shop' ? ' nakupuje výzbroj…' : ' je na ťahu…');
 }
 function startOnlineMatch() {
   const n = netJoinedCount();
@@ -1363,7 +1364,25 @@ function netSubscribe() {
 }
 function netLeave() {
   if (net.unsub) { net.unsub(); net.unsub = null; }
-  net.active = false; net.code = null; net.shopStep = 0; net.players = [];
+  net.active = false; net.spectator = false; net.code = null; net.shopStep = 0; net.players = [];
+}
+// divák: pripojí sa na izbu s myIdx = -1, ktorý sa nikdy nerovná žiadnemu skutočnému indexu hráča (0-3) ani net.shopStep/turnIdx -
+// vďaka tomu netIsMine() vráti vždy false a CELÁ existujúca "pasívne zariadenie len prijíma a vykresľuje" logika (zámky nákupu, ovládacie pady, ťah)
+// funguje pre diváka úplne zadarmo, bez špeciálnych vetiev v hernej logike. Divák nikdy nezapisuje nič do izby (ani do slots).
+async function spectateRoom(code) {
+  code = String(code || '').toUpperCase().trim();
+  const db = await ensureDb();
+  if (!db) { ask('Online multiplayer sa na tomto zariadení nedá spustiť (chýba pripojenie k Claude db).', () => {}); return; }
+  if (!code) { renderOnlineScreen('Zadaj kód izby, ktorú chceš sledovať.'); return; }
+  let snap;
+  try { snap = await db.doc('rooms/' + code).get(); } catch (e) { renderOnlineScreen('Chyba pripojenia, skús znova.'); return; }
+  if (!snap.exists) { renderOnlineScreen('Izba "' + code + '" neexistuje.'); return; }
+  const d = snap.data();
+  net.active = true; net.spectator = true; net.myIdx = -1; net.code = code; net.maxN = d.maxN; net.players = slotsToArray(d.slots, d.maxN); net.shopStep = 0;
+  hide('online');
+  if (d.status === 'playing' && d.data) { joinOnlineAsGuest(d.data); }
+  else { renderSetup(); show('menu'); }   // zápas sa ešte nespustil - počkaj v lobby, netSubscribe ťa prepne automaticky hneď ako hostiteľ odštartuje
+  netSubscribe();
 }
 function renderOnlineScreen(msg) {
   show('online');
@@ -1371,11 +1390,13 @@ function renderOnlineScreen(msg) {
   b.innerHTML = '<p>Zahraj si duel až so 4 hráčmi na iných telefónoch či počítačoch – všetci otvoríte tento istý odkaz. Jeden vytvorí izbu a nastaví si hráčov/kolá/terén presne ako pri lokálnej hre, ostatní sa pripoja kódom.</p>' +
     '<div class="row gap"><button class="btn" id="onlineHostBtn">🆕 Vytvoriť izbu</button></div>' +
     '<div class="row gap"><input class="pname" id="onlineCodeInput" placeholder="Kód izby (napr. AB3K9)" maxlength="6" style="max-width:220px;text-transform:uppercase">' +
-    '<button class="btn alt" id="onlineJoinBtn">Pripojiť sa</button></div>' +
+    '<button class="btn alt" id="onlineJoinBtn">Pripojiť sa</button>' +
+    '<button class="btn alt" id="onlineSpecBtn">👁️ Sledovať</button></div>' +
     (msg ? '<p class="msg" style="color:var(--gold)">' + esc(msg) + '</p>' : '') +
-    '<p><small>Vyžaduje prihlásenie do Claude – ostatní hráči musia byť v rovnakej organizácii/účte (napr. tvoje ďalšie telefóny, prihlásené rovnakým spôsobom).</small></p>';
+    '<p><small>Vyžaduje prihlásenie do Claude – ostatní hráči musia byť v rovnakej organizácii/účte (napr. tvoje ďalšie telefóny, prihlásené rovnakým spôsobom). "Sledovať" ťa pripojí ako diváka - vidíš zápas naživo, ale nehráš (ani rozohraný).</small></p>';
   $('onlineHostBtn').onclick = hostCreateRoom;
   $('onlineJoinBtn').onclick = () => guestJoinRoom($('onlineCodeInput').value);
+  $('onlineSpecBtn').onclick = () => spectateRoom($('onlineCodeInput').value);
 }
 $('homeOnlineBtn').addEventListener('click', () => { hide('home'); renderOnlineScreen(); });
 $('onlineClose').addEventListener('click', () => { netLeave(); hide('online'); show('home'); });
@@ -1610,6 +1631,7 @@ function continueGame() {
 function toMenu() {
   paused = false; state = 'menu';
   story.active = false; story.idx = null; document.body.classList.remove('storymode');
+  if (net.active) netLeave();   // odhlás sa z odberu izby, nech sa nezbiera "duch" pripojenia po návrate domov (platí pre hráča aj diváka)
   ['shop', 'end', 'pause', 'story', 'menu'].forEach(hide); $('banner').style.display = 'none';
   refreshContinue(); renderSetup(); renderHome(); show('home');
 }
@@ -2798,6 +2820,7 @@ function rowHtml(t, r) {
 }
 const rowHead = title => '<div class="rh"><span>' + title + '</span><span class="c">Cena</span><span class="c">Bal.</span><span class="c">Máš</span></div>';
 function renderShop() {
+  $('saveQuit').style.display = net.spectator ? 'none' : '';
   const t = tanks[shopPlayer], rows = shopRows(t);
   $('shopTabs').innerHTML = tanks.map(k => {
     const on = k.id === shopPlayer;
@@ -2849,8 +2872,9 @@ function buy(p, id) {
   renderShop();
 }
 $('shop').addEventListener('click', e => {
-  if (net.active && !netIsMine()) return;   // pasívne zariadenie nič nemení
   const tab = e.target.closest('[data-tab]');
+  if (net.spectator && tab) { shopPlayer = +tab.dataset.tab; renderShop(); return; }   // divák si smie prezerať výzbroj ktoréhokoľvek hráča, len nič nekupuje
+  if (net.active && !netIsMine()) return;   // pasívne zariadenie nič nemení
   if (tab) { if (!net.active) { shopPlayer = +tab.dataset.tab; renderShop(); } return; }
   const rd = e.target.closest('[data-ready]');
   if (rd && !rd.disabled) {
@@ -3158,7 +3182,7 @@ function renderOnlineLobby() {   // rovnaká obrazovka ako lokálne "Hrať teraz
   oa.innerHTML = '<div class="pm" style="text-align:center;letter-spacing:.15em;color:var(--gold)">' + esc(net.code) + '</div>' +
     (isHost
       ? '<button class="btn" id="onlineStartBtn"' + (n < 2 ? ' disabled' : '') + '>▶ ŠTART zápasu (' + n + '/' + net.maxN + ')</button>'
-      : '<p>Čaká sa, kým hostiteľ spustí zápas… (' + n + '/' + net.maxN + ' pripojených)</p>');
+      : '<p>' + (net.spectator ? '👁️ Sleduješ izbu, zápas sa ešte nespustil…' : 'Čaká sa, kým hostiteľ spustí zápas…') + ' (' + n + '/' + net.maxN + ' pripojených)</p>');
   if (isHost) $('onlineStartBtn').addEventListener('click', () => { goFullscreen(); hide('online'); hide('menu'); startOnlineMatch(); });
   $('setupRows').innerHTML = net.players.map((p, i) => {
     const filled = p && p.name, pc = filled ? p.color : '#555';
