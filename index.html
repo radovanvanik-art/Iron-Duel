@@ -269,10 +269,12 @@
   #homeWeeklyCard.done{background:rgba(95,211,95,.1);border-color:rgba(95,211,95,.4)}
   #homeWeeklyCard.done .dcFill{background:#5fd35f}
   .mt{width:52px;height:30px;position:relative;display:block}
-  .mt::before{content:"";position:absolute;left:0;right:0;bottom:0;height:12px;background:#20242e;border-radius:6px}
+  .mt:not(.art)::before{content:"";position:absolute;left:0;right:0;bottom:0;height:12px;background:#20242e;border-radius:6px}
   .mt i{position:absolute;left:6px;right:8px;bottom:8px;height:11px;background:var(--pc);border-radius:4px;display:block}
   .mt i::before{content:"";position:absolute;left:10px;top:-7px;width:20px;height:9px;border-radius:9px 9px 0 0;background:var(--pc)}
   .mt i::after{content:"";position:absolute;left:24px;top:-4px;width:22px;height:4px;background:var(--pc);transform:rotate(-15deg);transform-origin:left}
+  .mt.art{width:64px;height:30px;display:flex;align-items:flex-end;justify-content:center}
+  .mt.art img{width:64px;height:auto;filter:drop-shadow(0 2px 2px rgba(0,0,0,.5))}
   .pname{background:#0d1220;border:1px solid rgba(255,255,255,.25);border-radius:8px;color:#fff;padding:8px 10px;font-size:15px;width:100%;user-select:text;-webkit-user-select:text;touch-action:manipulation}
   .sw{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
   .swb{width:26px;height:26px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;touch-action:manipulation}
@@ -296,6 +298,9 @@
   .menuBg{position:fixed;inset:0;z-index:0;overflow:hidden;background:#0a1030;background-size:cover;background-position:center}
   .menuBg svg{width:100%;height:100%;display:block}
   .menuBg::after{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at 50% 38%,rgba(6,9,18,.15),rgba(5,7,14,.72) 72%),linear-gradient(180deg,rgba(5,7,14,.25),rgba(5,7,14,.55) 70%,rgba(5,7,14,.8))}
+  .menuFleet{position:absolute;left:0;right:0;bottom:0;height:14vh;min-height:90px;max-height:170px;pointer-events:none;overflow:hidden}
+  .menuFleet img{position:absolute;bottom:-2%;opacity:.5;filter:brightness(.62) saturate(.85) drop-shadow(0 6px 8px rgba(0,0,0,.55))}
+  @media (max-width:640px){.menuFleet{display:none}}
   .hub .card{position:relative;z-index:1;background:linear-gradient(175deg,rgba(18,23,38,.78),rgba(9,12,22,.72));backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
     border:1px solid rgba(255,213,74,.22);box-shadow:0 24px 60px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.05) inset,0 1px 0 rgba(255,255,255,.08) inset;
     animation:cardIn .45s cubic-bezier(.2,.8,.3,1) both}
@@ -507,6 +512,7 @@
         <label>Víťazné kolá<select id="roundsSel"><option value="3">3</option><option value="5">5</option><option value="7">7</option><option value="10">10</option></select></label>
         <label>Terén<select id="terrainSel"></select></label>
         <label>Obtiažnosť<select id="diffSel"><option value="easy">Ľahká</option><option value="normal">Normálna</option><option value="hard">Ťažká</option></select></label>
+        <label>Veľkosť mapy<select id="mapSizeSel"><option value="normal">Normálna</option><option value="large">Veľká</option></select></label>
       </div>
       <datalist id="nickList"></datalist>
       <div id="setupRows"></div>
@@ -713,4 +719,4 @@
     window.__firestoreDb = firebase.firestore();
   } catch (_) { /* mimo web hostingu (napr. Claude Artifact) - použije sa záložné window.claude db */ }
 </script>
-<script src="game.js?v=18"></script>
+<script src="game.js?v=20"></script>

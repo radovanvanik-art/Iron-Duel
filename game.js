@@ -59,6 +59,7 @@ const MENU_BG_SVG = '<svg viewBox="0 0 1600 520" preserveAspectRatio="xMidYMid s
   '</svg>';
 
 const W = 1280, H = 720;
+let WORLD_W = W;   // šírka HERNÉHO SVETA (terén, kamera, dekorácie) - zvyčajne = W, no pri "Veľkej mape" je väčšia; W samotné ostáva vždy pevné rozlíšenie plátna/HUD
 const GRAVITY = 400;
 const POWER_MIN = 15, POWER_SPEED = 45;   // sila výstrelu v % (a jej zmena za sekundu)
 const POWER_MUL_MIN = 0.4, POWER_MUL_MAX = 1.65;   // pri 100 % sile letí strela citeľne silnejšie/ďalej než len "základná" rýchlosť zbrane
@@ -247,13 +248,18 @@ function mkLayer(w, h) {
   const c = document.createElement('canvas'); c.width = Math.ceil(w * SCALE); c.height = Math.ceil(h * SCALE);
   const x = c.getContext('2d'); x.setTransform(SCALE, 0, 0, SCALE, 0, 0); return { c, x };
 }
+function mkWorldLayers() {   // vrstvy a pole terénu podľa aktuálnej šírky SVETA (WORLD_W) - znova sa vytvoria pri zmene veľkosti mapy aj kvality
+  ground = new Float32Array(WORLD_W + 1);
+  skyL = mkLayer(WORLD_W + 2 * M, H + 2 * M); terL = mkLayer(WORLD_W + 2 * M, H + 2 * M); scorchL = mkLayer(WORLD_W + 2 * M, H + 2 * M);
+  skyDirty = terDirty = true;
+}
 function setupCanvas() {
   cv.width = Math.round(W * SCALE); cv.height = Math.round(H * SCALE);
-  skyL = mkLayer(W + 2 * M, H + 2 * M); terL = mkLayer(W + 2 * M, H + 2 * M); scorchL = mkLayer(W + 2 * M, H + 2 * M); vigL = mkLayer(W, H);
+  vigL = mkLayer(W, H);
   const g = vigL.x.createRadialGradient(W / 2, H / 2, H * 0.45, W / 2, H / 2, H * 0.95);
   g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.42)'); vigL.x.fillStyle = g; vigL.x.fillRect(0, 0, W, H);
+  mkWorldLayers();
   for (const k in sprites) delete sprites[k];
-  skyDirty = terDirty = true;
 }
 function setQuality(q) { quality = q; SCALE = q >= 2 ? Math.min(2, window.devicePixelRatio || 1) : 1; MAXP = [180, 380, 700][q]; setupCanvas(); }
 function applyGfx() { gfx = setup.gfx; setQuality({ auto: 2, high: 2, mid: 1, low: 0 }[gfx] ?? 2); }
@@ -267,7 +273,7 @@ const $ = id => document.getElementById(id);
 // ---------- stav ----------
 let state = 'menu';            // menu | shop | play | roundEnd | matchEnd
 let tanks = [];
-let ground = new Float32Array(W + 1);
+let ground = new Float32Array(WORLD_W + 1);
 let obstacles = [];
 let projectiles = [];
 let particles = [];
@@ -308,11 +314,12 @@ const SAVE_KEY = 'ironDuelSave_v1', SETUP_KEY = 'ironDuelSetup_v1';
 const esc = str => String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const lum = c => { const v = parseInt(c.slice(1), 16); return (0.299 * (v >> 16) + 0.587 * ((v >> 8) & 255) + 0.114 * (v & 255)) / 255; };
 const isColor = c => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c);
-let setup = { n: 2, rounds: 5, terrain: 'random', difficulty: 'normal', gfx: 'auto', sound: true, players: PALETTE.slice(0, 4).map((c, i) => ({ name: 'Hráč ' + (i + 1), color: c, nick: null, bot: 0 })) };
+let setup = { n: 2, rounds: 5, terrain: 'random', difficulty: 'normal', gfx: 'auto', sound: true, mapSize: 'normal', players: PALETTE.slice(0, 4).map((c, i) => ({ name: 'Hráč ' + (i + 1), color: c, nick: null, bot: 0 })) };
 try {
   const v = JSON.parse(localStorage.getItem(SETUP_KEY));
   if (v && (v.terrain === 'random' || BIOMES[v.terrain])) setup.terrain = v.terrain;
   if (v && DIFFICULTY[v.difficulty]) setup.difficulty = v.difficulty;
+  if (v && ['normal', 'large'].includes(v.mapSize)) setup.mapSize = v.mapSize;
   if (v && ['auto', 'high', 'mid', 'low'].includes(v.gfx)) setup.gfx = v.gfx;
   if (v && typeof v.sound === 'boolean') setup.sound = v.sound;
   if (v && Array.isArray(v.players) && v.players.length === 4) {
@@ -947,6 +954,7 @@ function startStoryMissionReal(idx) {
   hide('story'); hide('dialog'); hide('generalDlg'); hide('menu'); hide('end');
   initAudio(); fixColors(); saveSetup();
   setup.terrain = m.terrain; WIN_ROUNDS = m.rounds;
+  applyMapSize('normal');   // príbehové misie sú vyladené na normálnu mapu, nezávisle od toho, čo má hráč nastavené v menu
   story.active = true; story.idx = idx;
   document.body.classList.add('storymode');
   const human = Object.assign({}, setup.players[0], { bot: 0 }), used = new Set([human.color.toLowerCase()]);
@@ -1357,7 +1365,7 @@ function rehydrateTank(d) {
 }
 function serializeState() {
   return {
-    biomeKey, ground: Array.from(ground),
+    biomeKey, worldW: WORLD_W, ground: Array.from(ground),
     obstacles: obstacles.map(o => ({ x: o.x, w: o.w, base: o.base, h: o.h, steel: o.steel, hp: o.hp, maxHp: o.maxHp || (o.steel ? 260 : 80), seed: o.seed })),
     trees: trees.map(tr => ({ x: tr.x, y0: tr.y0, h: tr.h, w: tr.w })),
     wind, gustPhase, round, winRounds: WIN_ROUNDS, state, turnIdx, turnPhase, turnTimer, shopTimer,
@@ -1367,7 +1375,9 @@ function serializeState() {
 }
 let netLastBiome = null;
 function applyState(d) {
+  WORLD_W = d.worldW || W;   // musí byť nastavené PRED genArena(), nech si pole terénu aj vrstvy vyrobí v správnej veľkosti
   if (netLastBiome !== d.biomeKey) { genArena(d.biomeKey); netLastBiome = d.biomeKey; }
+  if (ground.length !== d.ground.length) { WORLD_W = d.ground.length - 1; mkWorldLayers(); }   // poistka pre nesúlad veľkosti (napr. starý klient)
   ground.set(d.ground); obstacles = d.obstacles; trees = d.trees; wind = d.wind; gustPhase = d.gustPhase; terDirty = true;
   tanks = d.tanks.map(rehydrateTank);
   round = d.round; WIN_ROUNDS = d.winRounds; state = d.state; turnIdx = d.turnIdx; turnPhase = d.turnPhase; turnTimer = d.turnTimer;
@@ -1413,6 +1423,7 @@ function startOnlineMatch() {
   fixColors(); saveSetup();
   story.active = false; document.body.classList.remove('storymode');
   WIN_ROUNDS = setup.rounds; net.shopStep = 0;
+  applyMapSize(setup.mapSize);   // platí veľkosť mapy hostiteľa, hosťom sa ďalej synchronizuje cez worldW v stave zápasu
   tanks = net.players.slice(0, n).map((p, i) => makeTank(i, { name: p.name, color: p.color, nick: i === net.myIdx ? setup.players[0].nick : null, bot: 0 }));
   round = 1; lastResult = '';
   buildPads();
@@ -1518,7 +1529,7 @@ $('onlineClose').addEventListener('click', () => { netLeave(); hide('online'); s
 
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const gy = x => ground[clamp(Math.round(x), 0, W)];
+const gy = x => ground[clamp(Math.round(x), 0, WORLD_W)];
 
 // ---------- zvuk ----------
 let actx = null;
@@ -1608,20 +1619,22 @@ function addXp(t, n) {
 
 function placeTank(t, x) {
   t.x = x; t.y = groundAvg(x); t.tilt = tiltAt(x);
-  t.face = x < W / 2 ? 1 : -1; t.ang = t.face > 0 ? 50 : 130;
+  t.face = x < WORLD_W / 2 ? 1 : -1; t.ang = t.face > 0 ? 50 : 130;
   t.dead = false; t.cd = 0; t.emp = 0; t.stun = false; t.fired = false; t.sel = 'ap';
 }
 function groundAvg(x) { return (gy(x - 18) + gy(x + 18)) / 2; }
 function tiltAt(x) { return Math.atan2(gy(x + 18) - gy(x - 18), 36); }
 function pivot(t) { const h = t.artPivotH || 22; return { x: t.x + h * Math.sin(t.tilt), y: t.y - h * Math.cos(t.tilt) }; }
 function muzzle(t) {
-  const p = pivot(t), a = t.ang * Math.PI / 180;
-  return { x: p.x + Math.cos(a) * 36, y: p.y - Math.sin(a) * 36, dx: Math.cos(a), dy: -Math.sin(a) };
+  const p = pivot(t), a = t.ang * Math.PI / 180, art = tankArt[TANK_COLOR_NAME[t.color]];
+  const L = 36 * ((art && art.loaded) ? TANK_TARGET_W / 76 : 1);
+  return { x: p.x + Math.cos(a) * L, y: p.y - Math.sin(a) * L, dx: Math.cos(a), dy: -Math.sin(a) };
 }
 
 // ---------- terén a prekážky ----------
 const noiseTbl = () => Array.from({ length: 64 }, () => Math.random() * 2 - 1);
 function vnoise(tbl, x) { const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f), a = tbl[i & 63], b = tbl[(i + 1) & 63]; return a + (b - a) * u; }
+function applyMapSize(size) { WORLD_W = size === 'large' ? 2048 : W; }   // nastaví šírku sveta pred genArena() - samotné prekreslenie/realokáciu vrstiev si už genArena rieši sama
 function pickBiome() {
   if (setup.terrain !== 'random' && BIOMES[setup.terrain]) return setup.terrain;
   const others = BIOME_KEYS.filter(k => k !== biomeKey);
@@ -1629,11 +1642,12 @@ function pickBiome() {
 }
 function rollWind() { wind = Math.round(rand(-48, 48) * biome().windMul * diffOf().windMul); gustPhase = rand(0, 6.28); }
 function genArena(key) {
+  if (ground.length !== WORLD_W + 1) mkWorldLayers();   // mapa väčšej/inej veľkosti ako doteraz - treba znova vytvoriť pole terénu aj vrstvy
   biomeKey = key; const B = BIOMES[key];
   const T = [noiseTbl(), noiseTbl(), noiseTbl(), noiseTbl()], off = rand(0, 30);
   const nz = (k, per, x) => vnoise(T[k], x / per + off);
   const prm = { meadow: [475, 100, 520, 46, 210, 14, 85], desert: [500, 92, 620, 40, 260, 9, 95], winter: [480, 100, 560, 46, 240, 10, 95], forest: [470, 92, 480, 42, 190, 10, 75], canyon: [470, 120, 540, 55, 220, 14, 90], swamp: [470, 55, 600, 26, 260, 8, 55], volcano: [460, 105, 500, 48, 200, 12, 90], beach: [500, 55, 560, 22, 240, 8, 65], ruins: [475, 90, 480, 50, 200, 16, 80], moon: [475, 85, 460, 55, 190, 22, 65], mars: [480, 95, 520, 46, 220, 13, 85] }[key];
-  for (let x = 0; x <= W; x++) {
+  for (let x = 0; x <= WORLD_W; x++) {
     let y;
     if (key === 'mountains') {   // hrebeňový šum = ostré štíty a hlboké údolia
       const r = (k, per) => clamp((1 - Math.abs(nz(k, per, x)) - 0.25) / 0.7, 0, 1);
@@ -1658,14 +1672,14 @@ function genArena(key) {
       if (Math.random() > B.obst) continue;
       const w = rand(46, 70); if (s1 - s0 < w + 10) continue;
       const x0 = rand(s0, s1 - w), steel = Math.random() < 0.3, y0 = ground[Math.round(x0 + w / 2)];
-      for (let x = Math.floor(x0 - 6); x <= Math.ceil(x0 + w + 6); x++) ground[clamp(x, 0, W)] = y0;
+      for (let x = Math.floor(x0 - 6); x <= Math.ceil(x0 + w + 6); x++) ground[clamp(x, 0, WORLD_W)] = y0;
       obstacles.push({ x: x0, w, base: y0, h: steel ? rand(40, 72) : rand(70, 120), steel, hp: steel ? 260 : 80, maxHp: steel ? 260 : 80, seed: Math.random() });
     }
   }
 
   trees = []; decor = [];   // stromy (v lese fungujú ako prekážka) a dekorácie
   const free = x => sx.every(q => Math.abs(x - q) > 95) && obstacles.every(o => x < o.x - 25 || x > o.x + o.w + 25);
-  const put = (cnt, make) => { for (let i = 0, tries = 0; i < cnt && tries < cnt * 8; tries++) { const x = rand(20, W - 20); if (!free(x)) continue; make(x, ground[Math.round(x)]); i++; } };
+  const put = (cnt, make) => { for (let i = 0, tries = 0; i < cnt && tries < cnt * 8; tries++) { const x = rand(20, WORLD_W - 20); if (!free(x)) continue; make(x, ground[Math.round(x)]); i++; } };
   if (B.trees) put(12 + Math.floor(Math.random() * 6), (x, y0) => trees.push({ x, y0, h: rand(62, 112), w: rand(34, 50) }));
   const D = { meadow: [['bush', 12], ['rock', 4]], desert: [['cactus', 9], ['rock', 6]], winter: [['pine', 10], ['rock', 4]], forest: [['bush', 10], ['rock', 3]], mountains: [['pine', 8], ['rock', 8]], canyon: [['rock', 16]], swamp: [['bush', 15], ['rock', 3]], volcano: [['rock', 14]], beach: [['bush', 6], ['rock', 3]], ruins: [['rock', 22]], moon: [['rock', 20]], mars: [['rock', 12]] }[key];
   D.forEach(([type, cnt]) => put(cnt, (x, y0) => { if (key === 'mountains' && type === 'pine' && y0 < 430) return; decor.push({ type, x, y0, s: rand(0.7, 1.3) }); }));
@@ -1673,18 +1687,23 @@ function genArena(key) {
   hills = [];
   for (let i = 0; i < 3; i++) hills.push({ a: rand(40, 90) * (key === 'mountains' ? 1.7 : 1), f: rand(0.002, 0.006), p: rand(0, 6.28), base: 380 + i * 25, col: B.hills[i] });
   clouds = [];
-  for (let i = 0; i < 6; i++) clouds.push({ x: rand(0, W), y: rand(40, 220), s: rand(0.6, 1.4) });
-  sun = { x: rand(220, 1060), y: rand(125, 200) };
+  for (let i = 0; i < 6; i++) clouds.push({ x: rand(0, WORLD_W), y: rand(40, 220), s: rand(0.6, 1.4) });
+  sun = { x: rand(WORLD_W * 0.172, WORLD_W * 0.828), y: rand(125, 200) };
   weather = [];
   const wn = { snow: 130, dust: 70, leaf: 38, mist: 9, pollen: 26 }[B.weather] || 0;
-  for (let i = 0; i < wn; i++) weather.push({ x: rand(0, W), y: B.weather === 'mist' ? rand(300, 560) : rand(0, H * 0.92), s: rand(0.6, 1.6), ph: rand(0, 6.28) });
+  for (let i = 0; i < wn; i++) weather.push({ x: rand(0, WORLD_W), y: B.weather === 'mist' ? rand(300, 560) : rand(0, H * 0.92), s: rand(0.6, 1.6), ph: rand(0, 6.28) });
   skyDirty = terDirty = true;
-  if (scorchL) scorchL.x.clearRect(0, 0, W + 2 * M, H + 2 * M);
-  specks = Array.from({ length: quality >= 1 ? 1300 : 450 }, () => ({ x: rand(-M, W + M), y: rand(230, H + M), r: rand(1, 2.6), a: Math.random() < 0.5 ? rand(0.05, 0.16) : -rand(0.05, 0.2) }));
-  stars = Array.from({ length: 110 }, () => ({ x: rand(0, W), y: rand(0, 330), r: rand(0.5, 1.5), a: rand(0.25, 0.9), ph: rand(0, 6.28), tw: rand(0.5, 1.8) }));
+  if (scorchL) scorchL.x.clearRect(0, 0, WORLD_W + 2 * M, H + 2 * M);
+  const wScale = WORLD_W / W;   // na väčšej mape pridaj úmerne viac prachu/hviezd, nech dekorácia nepôsobí riedko
+  specks = Array.from({ length: Math.round((quality >= 1 ? 1300 : 450) * wScale) }, () => ({ x: rand(-M, WORLD_W + M), y: rand(230, H + M), r: rand(1, 2.6), a: Math.random() < 0.5 ? rand(0.05, 0.16) : -rand(0.05, 0.2) }));
+  stars = Array.from({ length: Math.round(110 * wScale) }, () => ({ x: rand(0, WORLD_W), y: rand(0, 330), r: rand(0.5, 1.5), a: rand(0.25, 0.9), ph: rand(0, 6.28), tw: rand(0.5, 1.8) }));
   rollWind();
 }
-const spawnXs = n => n === 2 ? [135, 1145] : n === 3 ? [135, 640, 1145] : [135, 468, 812, 1145];
+const spawnXs = n => {
+  if (WORLD_W === W) return n === 2 ? [135, 1145] : n === 3 ? [135, 640, 1145] : [135, 468, 812, 1145];   // pri normálnej mape presne pôvodné hodnoty (nič sa vizuálne nemení)
+  const margin = 135;
+  return Array.from({ length: n }, (_, i) => Math.round(margin + (WORLD_W - 2 * margin) * i / (n - 1)));
+};
 function flatten(cx, half, fade) {
   const y = ground[cx];
   for (let x = cx - half - fade; x <= cx + half + fade; x++) {
@@ -1694,7 +1713,7 @@ function flatten(cx, half, fade) {
 }
 function obTop(o) { return o.base - o.h; }
 function carve(cx, cy, r) {
-  for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(W, Math.ceil(cx + r)); x++) {
+  for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(WORLD_W, Math.ceil(cx + r)); x++) {
     const dx = x - cx, dy = Math.sqrt(Math.max(0, r * r - dx * dx));
     if (ground[x] >= cy - dy && ground[x] < cy + dy) ground[x] = Math.min(H, cy + dy);
   }
@@ -1720,6 +1739,7 @@ function startMatch(force) {
   initAudio();
   fixColors(); saveSetup();
   WIN_ROUNDS = setup.rounds;
+  applyMapSize(setup.mapSize);
   tanks = setup.players.slice(0, setup.n).map((p, i) => makeTank(i, p));
   round = 1; lastResult = '';
   buildPads();
@@ -1730,6 +1750,7 @@ function continueGame() {
   const sv = readSave(); if (!sv) return;
   story.active = false; story.idx = null; document.body.classList.remove('storymode');
   initAudio();
+  applyMapSize(setup.mapSize);   // uložená hra si veľkosť mapy nepamätá (rovnako ako terén/biome) - použije sa aktuálne nastavenie
   WIN_ROUNDS = sv.winRounds || 5; round = sv.round || 1; lastResult = sv.lastResult || '';
   tanks = sv.players.map((p, i) => {
     const t = makeTank(i, { name: String(p.name).slice(0, 14), color: isColor(p.color) ? p.color : PALETTE[i], nick: typeof p.nick === 'string' ? p.nick : null, bot: p.bot | 0 });
@@ -1797,7 +1818,7 @@ function simShot(t, type, ang, pw) {
   const p = { x: m.x, y: m.y, vx: Math.cos(rad) * sp, vy: -Math.sin(rad) * sp, type, life: 0 };
   for (let i = 0; i < 160; i++) {
     stepShot(p, 1 / 30);
-    if (p.x < 0 || p.x > W || p.y > H) return { x: p.x, y: Math.min(p.y, H) };
+    if (p.x < 0 || p.x > WORLD_W || p.y > H) return { x: p.x, y: Math.min(p.y, H) };
     if (p.y >= gy(p.x)) return { x: p.x, y: p.y };
     if (tanks.some(o => !o.dead && (o !== t || p.life > 0.25) && inTank(o, p.x, p.y))) return { x: p.x, y: p.y };
     if (obstacles.some(o => p.x >= o.x && p.x <= o.x + o.w && p.y >= obTop(o) && p.y <= o.base)) return { x: p.x, y: p.y };
@@ -1973,7 +1994,7 @@ function selectAmmo(t, k) {
 }
 function spawnProj(x, y, vx, vy, type, owner, arm) { projectiles.push({ x, y, vx, vy, type, owner, bounces: 0, life: 0, arm: arm || 0 }); }
 function addDirt(cx, cy, r) {
-  for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(W, Math.ceil(cx + r)); x++) {
+  for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(WORLD_W, Math.ceil(cx + r)); x++) {
     const dx = x - cx, top = cy - Math.sqrt(Math.max(0, r * r - dx * dx));
     if (ground[x] > top) ground[x] = Math.max(200, top);
   }
@@ -1983,7 +2004,7 @@ function addDirt(cx, cy, r) {
 }
 function teleportTank(id, x) {
   const t = tanks[id]; if (!t || t.dead) return;
-  const nx = clamp(x, 24, W - 24);
+  const nx = clamp(x, 24, WORLD_W - 24);
   if (blocked(t, nx)) { floatText(t.x, t.y - 50, 'Blokované!', '#ff9a3c'); return; }
   for (let i = 0; i < 24; i++) spark(t.x + rand(-16, 16), t.y - rand(0, 34), rand(-60, 60), rand(-120, 20), '#c9a7ff', rand(0.3, 0.7), 3, 0);
   t.x = nx; t.y = groundAvg(nx); t.vx = 0;
@@ -2025,7 +2046,7 @@ function fireLaser(t, m) {
   let x = m.x, y = m.y, hit = false;
   for (let i = 0; i < 1800; i++) {
     x += m.dx * 2; y += m.dy * 2;
-    if (x < 0 || x > W || y > H || y < -300) break;
+    if (x < 0 || x > WORLD_W || y > H || y < -300) break;
     if (y >= gy(x)) { carve(x, y, AMMO.laser.crater * biome().crater); hit = true; break; }
     const e = tanks.find(o => o !== t && !o.dead && inTank(o, x, y));
     if (e) { damage(e, AMMO.laser.dmg * dmgMul(t, 'laser'), t.id, x, y, true); hit = true; break; }
@@ -2189,7 +2210,7 @@ function updateTank(t, dt) {
     if (dir && up < limit) vx = dir * sp * clamp(1 - 0.5 * Math.max(0, up), 0.3, 1.3);
   }
   if (vx) {
-    const nx = clamp(t.x + vx * dt, 24, W - 24);
+    const nx = clamp(t.x + vx * dt, 24, WORLD_W - 24);
     if (!blocked(t, nx)) {
       if (dir) t.fuel = Math.max(0, t.fuel - Math.abs(nx - t.x) * FUEL_PER_PX * B.fuel * (1 + 0.5 * Math.max(0, -slope * dir)));
       t.trackPhase = (t.trackPhase || 0) + (nx - t.x);
@@ -2223,8 +2244,8 @@ function updateProjectiles(dt) {
         break;
       }
       if (p.y > H + 60 || p.life > 8) { p.gone = true; break; }
-      if (p.x < 0 || p.x > W) {
-        if (p.bounces > 0) { p.vx = -p.vx * 0.8; p.x = clamp(p.x, 1, W - 1); p.bounces--; bounceFx(p); continue; }
+      if (p.x < 0 || p.x > WORLD_W) {
+        if (p.bounces > 0) { p.vx = -p.vx * 0.8; p.x = clamp(p.x, 1, WORLD_W - 1); p.bounces--; bounceFx(p); continue; }
         p.gone = true; break;
       }
       // tanky
@@ -2272,7 +2293,7 @@ function bounceFx(p) {
 }
 function updateCamera(dt) {
   if (lastImpact) { lastImpact.t -= dt; if (lastImpact.t <= 0) lastImpact = null; }
-  let tx = W / 2, ty = H / 2, tz = 1;
+  let tx = WORLD_W / 2, ty = H / 2, tz = 1;
   if (camZoomOn && state === 'play') {
     const t = tanks[turnIdx];
     if (turnPhase === 'aim' && t && !t.dead) { tx = t.x; ty = t.y - 40; tz = CAM_ZOOM; }
@@ -2288,7 +2309,7 @@ function updateCamera(dt) {
   const k = 1 - Math.pow(0.0025, Math.min(0.1, dt));   // plynulé tlmené sledovanie (framerate-nezávislé)
   cam.x += (tx - cam.x) * k; cam.y += (ty - cam.y) * k; cam.zoom += (tz - cam.zoom) * k;
   const halfW = W / cam.zoom / 2, halfH = H / cam.zoom / 2;
-  cam.x = clamp(cam.x, halfW, W - halfW); cam.y = clamp(cam.y, halfH, H - halfH);
+  cam.x = clamp(cam.x, halfW, WORLD_W - halfW); cam.y = clamp(cam.y, halfH, H - halfH);
 }
 function update(dt) {
   if (paused) return;
@@ -2304,9 +2325,9 @@ function update(dt) {
     else if (kind === 'leaf') { p.y += 22 * dt; p.x += (wind * 0.6 + Math.sin(time * 1.5 + p.ph) * 25) * dt; }
     else if (kind === 'pollen') { p.y += Math.sin(time * 0.8 + p.ph) * 6 * dt; p.x += (wind * 0.3 + 8) * dt; }
     else if (kind === 'mist') p.x += (wind * 0.25 + 6) * dt;
-    if (p.x > W + 60) p.x = -60; if (p.x < -60) p.x = W + 60; if (p.y > H + 10) p.y = -10;
+    if (p.x > WORLD_W + 60) p.x = -60; if (p.x < -60) p.x = WORLD_W + 60; if (p.y > H + 10) p.y = -10;
   });
-  clouds.forEach(c => { c.x += wind * 0.05 * dt + 3 * dt; if (c.x > W + 120) c.x = -120; if (c.x < -120) c.x = W + 120; });
+  clouds.forEach(c => { c.x += wind * 0.05 * dt + 3 * dt; if (c.x > WORLD_W + 120) c.x = -120; if (c.x < -120) c.x = WORLD_W + 120; });
 
   if (state === 'shop') {
     shopTimer -= dt;
@@ -2375,19 +2396,19 @@ function drawTurnMarker() {
 }
 function buildSky() {
   const B = biome(), x = skyL.x;
-  x.setTransform(SCALE, 0, 0, SCALE, 0, 0); x.clearRect(0, 0, W + 2 * M, H + 2 * M);
+  x.setTransform(SCALE, 0, 0, SCALE, 0, 0); x.clearRect(0, 0, WORLD_W + 2 * M, H + 2 * M);
   x.save(); x.translate(M, M);
   const g = x.createLinearGradient(0, -M, 0, H + M);
   g.addColorStop(0, B.sky[0]); g.addColorStop(0.55, B.sky[1]); g.addColorStop(1, B.sky[2]);
-  x.fillStyle = g; x.fillRect(-M, -M, W + 2 * M, H + 2 * M);
+  x.fillStyle = g; x.fillRect(-M, -M, WORLD_W + 2 * M, H + 2 * M);
   skyIsDark = lum(B.sky[0]) < 0.25;   // hviezdy sa teraz kreslia animovane (blikanie + paralax) v drawSky(), nie sem natrvalo
   if (biomeKey === 'winter') {   // polárna žiara
     for (let k = 0; k < 3; k++) {
       const ag = x.createLinearGradient(0, 40 + k * 30, 0, 230 + k * 30);
       ag.addColorStop(0, 'rgba(90,255,190,0)'); ag.addColorStop(0.5, 'rgba(90,255,190,' + (0.17 - k * 0.04) + ')'); ag.addColorStop(1, 'rgba(120,120,255,0)');
       x.fillStyle = ag; x.beginPath(); x.moveTo(-M, 60 + k * 30);
-      for (let px = -M; px <= W + M; px += 20) x.lineTo(px, 90 + k * 30 + Math.sin(px * 0.006 + k * 1.7) * 40);
-      x.lineTo(W + M, 250 + k * 30); x.lineTo(-M, 250 + k * 30); x.closePath(); x.fill();
+      for (let px = -M; px <= WORLD_W + M; px += 20) x.lineTo(px, 90 + k * 30 + Math.sin(px * 0.006 + k * 1.7) * 40);
+      x.lineTo(WORLD_W + M, 250 + k * 30); x.lineTo(-M, 250 + k * 30); x.closePath(); x.fill();
     }
   }
   const sg = x.createRadialGradient(sun.x, sun.y, 4, sun.x, sun.y, 90);
@@ -2397,19 +2418,19 @@ function buildSky() {
     const hg = x.createLinearGradient(0, h.base - h.a, 0, h.base + 140);
     hg.addColorStop(0, h.col); hg.addColorStop(1, shade(h.col, -28));
     x.fillStyle = hg; x.beginPath(); x.moveTo(-M, H + M);
-    for (let px = -M; px <= W + M; px += 16) x.lineTo(px, h.base + h.a * Math.sin(px * h.f + h.p));
-    x.lineTo(W + M, H + M); x.fill();
+    for (let px = -M; px <= WORLD_W + M; px += 16) x.lineTo(px, h.base + h.a * Math.sin(px * h.f + h.p));
+    x.lineTo(WORLD_W + M, H + M); x.fill();
   });
   x.restore(); skyDirty = false;
 }
 function drawSky() {
   if (skyDirty) buildSky();
-  ctx.drawImage(skyL.c, -M, -M, W + 2 * M, H + 2 * M);
+  ctx.drawImage(skyL.c, -M, -M, WORLD_W + 2 * M, H + 2 * M);
   if (skyIsDark) {   // hviezdy blikajú a posúvajú sa pomalšie než kamera (paralax = pôsobia vzdialenejšie)
     const px = cam.x * 0.72;
     ctx.fillStyle = '#fff';
     stars.forEach(st => {
-      const tw = 0.7 + 0.3 * Math.sin(time * st.tw + st.ph), sx = ((st.x + px) % W + W) % W;
+      const tw = 0.7 + 0.3 * Math.sin(time * st.tw + st.ph), sx = ((st.x + px) % WORLD_W + WORLD_W) % WORLD_W;
       ctx.globalAlpha = st.a * (1 - st.y / 380) * tw;
       ctx.beginPath(); ctx.arc(sx, st.y, st.r, 0, 6.3); ctx.fill();
     });
@@ -2420,38 +2441,38 @@ function drawSky() {
 }
 function buildTerrain() {
   const B = biome(), x = terL.x;
-  x.setTransform(SCALE, 0, 0, SCALE, 0, 0); x.clearRect(0, 0, W + 2 * M, H + 2 * M);
+  x.setTransform(SCALE, 0, 0, SCALE, 0, 0); x.clearRect(0, 0, WORLD_W + 2 * M, H + 2 * M);
   x.save(); x.translate(M, M);
   const trace = (off, step, wob) => {
     x.beginPath(); x.moveTo(-M, ground[0] + off);
-    for (let px = 0; px <= W; px += step) x.lineTo(px, ground[px] + off + (wob ? Math.sin(px * 0.02 + wob * 2) * 5 : 0));
-    x.lineTo(W + M, ground[W] + off);
+    for (let px = 0; px <= WORLD_W; px += step) x.lineTo(px, ground[px] + off + (wob ? Math.sin(px * 0.02 + wob * 2) * 5 : 0));
+    x.lineTo(WORLD_W + M, ground[WORLD_W] + off);
   };
   const g = x.createLinearGradient(0, B.gtop, 0, H);
   g.addColorStop(0, B.ground[0]); g.addColorStop(B.gmid, B.ground[1]); g.addColorStop(1, B.ground[2]);
-  x.fillStyle = g; trace(0, 2); x.lineTo(W + M, H + M); x.lineTo(-M, H + M); x.closePath(); x.fill();
+  x.fillStyle = g; trace(0, 2); x.lineTo(WORLD_W + M, H + M); x.lineTo(-M, H + M); x.closePath(); x.fill();
   x.globalCompositeOperation = 'source-atop';   // textúra len vo vnútri terénu
   x.lineWidth = 1.3; x.strokeStyle = 'rgba(0,0,0,.075)';
   for (let k = 1; k <= 6; k++) { trace(k * 38, 8, k); x.stroke(); }
   specks.forEach(sp => { x.fillStyle = sp.a > 0 ? 'rgba(255,255,255,' + sp.a + ')' : 'rgba(0,0,0,' + (-sp.a) + ')'; x.fillRect(sp.x, sp.y, sp.r, sp.r); });
   x.strokeStyle = 'rgba(0,0,0,.22)'; x.lineWidth = 16; trace(10, 4); x.stroke();      // tieň pod hranou
-  x.drawImage(scorchL.c, -M, -M, W + 2 * M, H + 2 * M);                                // škvrny po výbuchoch
+  x.drawImage(scorchL.c, -M, -M, WORLD_W + 2 * M, H + 2 * M);                                // škvrny po výbuchoch
   x.globalCompositeOperation = 'source-over';
   x.strokeStyle = B.edge; x.lineWidth = 4; trace(0, 2); x.stroke();
   x.strokeStyle = 'rgba(255,255,255,.28)'; x.lineWidth = 1.4; trace(-1.5, 2); x.stroke();
   if (biomeKey === 'meadow' || biomeKey === 'forest') {   // steblá trávy
     x.strokeStyle = B.edge; x.lineWidth = 1.5; x.beginPath();
-    for (let px = 2; px < W; px += 5) { const h = 3 + hash1(px) * 5, y = ground[px]; x.moveTo(px, y); x.lineTo(px + (hash1(px + 7) - 0.5) * 4, y - h); }
+    for (let px = 2; px < WORLD_W; px += 5) { const h = 3 + hash1(px) * 5, y = ground[px]; x.moveTo(px, y); x.lineTo(px + (hash1(px + 7) - 0.5) * 4, y - h); }
     x.stroke();
   } else if (biomeKey === 'winter') {                      // snehové hrudy
     x.fillStyle = 'rgba(255,255,255,.95)';
-    for (let px = 3; px < W; px += 9) { x.beginPath(); x.arc(px, ground[px] - 0.5, 2 + hash1(px) * 2.5, 0, 6.3); x.fill(); }
+    for (let px = 3; px < WORLD_W; px += 9) { x.beginPath(); x.arc(px, ground[px] - 0.5, 2 + hash1(px) * 2.5, 0, 6.3); x.fill(); }
   }
   x.restore(); terDirty = false;
 }
 function drawTerrain() {
   if (terDirty) buildTerrain();
-  ctx.drawImage(terL.c, -M, -M, W + 2 * M, H + 2 * M);
+  ctx.drawImage(terL.c, -M, -M, WORLD_W + 2 * M, H + 2 * M);
 }
 function drawTreadMarks() {   // stopy po pásoch na zemi – kreslia sa priamo nad terénom, postupne vyblednú a zmiznú
   if (!treadMarks.length) return;
@@ -2537,7 +2558,7 @@ function previewPts(t) {
   const p = { x: m.x, y: m.y, vx: m.dx * sp, vy: m.dy * sp, type: t.sel, life: 0 }, pts = [];
   for (let i = 0; i < 220; i++) {   // dosť krokov na celý dolet aj pri silnom vetre (nie len prvú sekundu letu)
     stepShot(p, 1 / 30);
-    if (p.y >= gy(p.x) || p.x < 0 || p.x > W || p.y > H) break;
+    if (p.y >= gy(p.x) || p.x < 0 || p.x > WORLD_W || p.y > H) break;
     pts.push({ x: p.x, y: p.y });
   }
   return pts;
@@ -2614,19 +2635,14 @@ const TANK_COLOR_NAME = {
   '#3e8bff': 'blue', '#e5484d': 'red', '#3fbf5f': 'green', '#f2c230': 'gold', '#b06cff': 'purple',
   '#ff8a3d': 'orange', '#2fd0c8': 'teal', '#ff5fb0': 'pink', '#9aa5b1': 'gray', '#8bd450': 'lime',
 };
+// Realistickejší sprite set (2025-10) je prekreslený z jednej spoločnej flat-side-view predlohy a len prefarbený
+// pre každú farbu (HSV hue/sat swap pri zachovaní tieňovania) – preto majú všetky farby rovnaké rozmery/pivot.
+const TANK_ART_SHARED = { hullW: 400, hullH: 101, pivotX: 175, turretSide: 437 };
 const TANK_ART_META = {
-  blue: { hullW: 973, hullH: 215, pivotX: 438, turretSide: 1078 },
-  red: { hullW: 908, hullH: 227, pivotX: 422, turretSide: 980 },
-  green: { hullW: 972, hullH: 234, pivotX: 387, turretSide: 1178 },
-  gold: { hullW: 914, hullH: 221, pivotX: 546, turretSide: 1100 },
-  purple: { hullW: 832, hullH: 208, pivotX: 453, turretSide: 914 },
-  orange: { hullW: 926, hullH: 247, pivotX: 408, turretSide: 1044 },
-  teal: { hullW: 973, hullH: 214, pivotX: 470, turretSide: 1014 },
-  pink: { hullW: 925, hullH: 231, pivotX: 418, turretSide: 1022 },
-  gray: { hullW: 908, hullH: 229, pivotX: 372, turretSide: 1080 },
-  lime: { hullW: 962, hullH: 251, pivotX: 404, turretSide: 1124 },
+  blue: TANK_ART_SHARED, red: TANK_ART_SHARED, green: TANK_ART_SHARED, gold: TANK_ART_SHARED, purple: TANK_ART_SHARED,
+  orange: TANK_ART_SHARED, teal: TANK_ART_SHARED, pink: TANK_ART_SHARED, gray: TANK_ART_SHARED, lime: TANK_ART_SHARED,
 };
-const TANK_TARGET_W = 76;   // cieľová šírka trupu na obrazovke (px), zjednocuje rozdielne mierky AI generovania
+const TANK_TARGET_W = 130;   // cieľová šírka trupu na obrazovke (px); zväčšené z 76, nech je detailnejší realistický sprite čitateľný
 function tankArtScale(colorName) { const m = TANK_ART_META[colorName]; return m ? TANK_TARGET_W / m.hullW : 0; }
 function tankArtPivotH(colorHex) {
   const name = TANK_COLOR_NAME[colorHex], m = TANK_ART_META[name];
@@ -2723,13 +2739,13 @@ function drawTank(t) {
   ctx.fillStyle = '#20242e'; ctx.beginPath(); ctx.arc(p.x, p.y, 4.5, 0, 6.3); ctx.fill();
   }
   if (t.shield > 0) {
-    const T = t.shT || 1, col = tierCss(T), frac = clamp(t.shield / (t.shieldMax || 1), 0.25, 1);
+    const T = t.shT || 1, col = tierCss(T), frac = clamp(t.shield / (t.shieldMax || 1), 0.25, 1), ss = TANK_TARGET_W / 76;
     const pulse = frac * (0.55 + 0.25 * Math.sin(time * 6));
     ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineWidth = 2 + T * 0.35;
-    ctx.beginPath(); ctx.arc(t.x, t.y - 16, 36 + (T >= 10 ? 4 : 0), 0, 6.3);
+    ctx.beginPath(); ctx.arc(t.x, t.y - 16 * ss, (36 + (T >= 10 ? 4 : 0)) * ss, 0, 6.3);
     ctx.globalAlpha = pulse * 0.2; ctx.fill();
     ctx.globalAlpha = pulse; ctx.stroke();
-    if (T >= 7) { ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(t.x, t.y - 16, 42 + (T >= 10 ? 4 : 0), 0, 6.3); ctx.stroke(); }
+    if (T >= 7) { ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(t.x, t.y - 16 * ss, (42 + (T >= 10 ? 4 : 0)) * ss, 0, 6.3); ctx.stroke(); }
     ctx.globalAlpha = 1;
   }
 }
@@ -3376,7 +3392,8 @@ function renderSetup() {
   $('nBtns').innerHTML = [2, 3, 4].map(k => '<button class="nb' + (n === k ? ' on' : '') + '"' + (guestLocked ? ' disabled' : '') + ' data-n="' + k + '">' + k + ' hráči</button>').join('');
   $('roundsSel').value = String(setup.rounds);
   $('terrainSel').value = setup.terrain; $('diffSel').value = setup.difficulty; $('gfxSel').value = setup.gfx;
-  $('roundsSel').disabled = guestLocked; $('terrainSel').disabled = guestLocked; $('diffSel').disabled = guestLocked;
+  $('mapSizeSel').value = setup.mapSize;
+  $('roundsSel').disabled = guestLocked; $('terrainSel').disabled = guestLocked; $('diffSel').disabled = guestLocked; $('mapSizeSel').disabled = guestLocked;
   if (net.active) { renderOnlineLobby(); return; }
   $('startBtn').style.display = ''; $('onlineActions').style.display = 'none';
   const act = setup.players.slice(0, setup.n);
@@ -3384,7 +3401,9 @@ function renderSetup() {
     const taken = new Set(act.filter((_, j) => j !== i).map(q => q.color.toLowerCase())), prof = getProfile(p.nick);
     const status = (prof ? '<b class="ok">✔ Prihlásený</b> · ' + esc(statsLine(prof)) : 'Hosť – štatistiky sa neukladajú. Zadaj prezývku a prihlás sa.') +
       (slotMsg[i] ? '<br><b class="msg">' + esc(slotMsg[i]) + '</b>' : '');
-    return '<div class="prow" style="--pc:' + p.color + '"><span class="mt"><i></i></span>' +
+    const artName = TANK_COLOR_NAME[p.color.toLowerCase()];
+    const mtHtml = artName ? '<span class="mt art"><img src="assets/tanks/tank_hull_' + artName + '.png" alt="" draggable="false"></span>' : '<span class="mt"><i></i></span>';
+    return '<div class="prow" style="--pc:' + p.color + '">' + mtHtml +
       '<input class="pname" data-i="' + i + '" maxlength="14" list="nickList" autocomplete="off" placeholder="Prezývka" value="' + esc(p.name) + '"' + (prof || p.bot ? ' readonly' : '') + ' aria-label="Prezývka hráča ' + (i + 1) + '">' +
       '<button class="lgn' + (prof ? ' out' : '') + '" data-i="' + i + '" data-act="' + (prof ? 'out' : 'in') + '"' + (p.bot ? ' disabled' : '') + '>' + (prof ? 'Odhlásiť' : 'Prihlásiť') + '</button>' +
       '<div class="sw"><select class="bsel" data-i="' + i + '" title="Typ hráča">' + ['Človek', 'PC ľahký', 'PC stredný', 'PC ťažký'].map((n, k) => '<option value="' + k + '"' + (p.bot === k ? ' selected' : '') + '>' + n + '</option>').join('') + '</select>' + PALETTE.map(c => '<button class="swb' + (c.toLowerCase() === p.color.toLowerCase() ? ' sel' : '') + '" data-i="' + i + '" data-c="' + c + '" style="background:' + c + '"' + (taken.has(c.toLowerCase()) ? ' disabled' : '') + ' title="Farba tanku"></button>').join('') +
@@ -3484,6 +3503,7 @@ $('nBtns').addEventListener('click', e => {
 });
 $('terrainSel').innerHTML = '<option value="random">Náhodný</option>' + BIOME_KEYS.map(k => '<option value="' + k + '">' + BIOMES[k].icon + ' ' + BIOMES[k].name + '</option>').join('');
 $('terrainSel').addEventListener('change', e => { setup.terrain = e.target.value; saveSetup(); });
+$('mapSizeSel').addEventListener('change', e => { setup.mapSize = e.target.value; saveSetup(); });
 $('diffSel').addEventListener('change', e => { setup.difficulty = e.target.value; saveSetup(); });
 $('gfxSel').addEventListener('change', e => { setup.gfx = e.target.value; saveSetup(); applyGfx(); });
 $('roundsSel').addEventListener('change', e => { setup.rounds = +e.target.value; saveSetup(); });
@@ -3672,7 +3692,22 @@ document.querySelectorAll('.menuBg').forEach(el => {
   img.onload = () => { el.style.backgroundImage = "url('assets/menu-bg.jpg')"; };
   img.onerror = () => { el.innerHTML = MENU_BG_SVG; };   // AI podklad sa nenačítal - záložné ručné SVG pozadie
   img.src = 'assets/menu-bg.jpg';
+  el.appendChild(menuFleetEl());   // tmavá "kolóna" AI tankov pozdĺž spodku obrazovky - dekorácia z vygenerovaných spritov
 });
+function menuFleetEl() {   // zakaždým trochu iné rozostavenie tankov, nech obrazovka pôsobí živo
+  const names = Object.keys(TANK_ART_META), n = 6, wrap = document.createElement('div');
+  wrap.className = 'menuFleet';
+  for (let i = 0; i < n; i++) {
+    const name = names[Math.floor(hash1(i * 37.1 + 2) * names.length) % names.length];
+    const left = 4 + (i / n) * 100 + hash1(i * 11.3) * (90 / n - 10), w = 90 + hash1(i * 5.2) * 70, flip = hash1(i * 7.7) > 0.5;
+    const im = document.createElement('img');
+    im.src = 'assets/tanks/tank_hull_' + name + '.png'; im.alt = ''; im.draggable = false;
+    im.style.left = left + '%'; im.style.width = w + 'px'; im.style.zIndex = Math.round(w);
+    im.style.transform = 'translateX(-50%)' + (flip ? ' scaleX(-1)' : '');
+    wrap.appendChild(im);
+  }
+  return wrap;
+}
 (async () => {   // zisti, či už existuje prihlásená Google (Supabase) relácia z predošlej návštevy, inak záložne skontroluj starý lokálny/hosťovský stav
   if (sb) {
     try {
