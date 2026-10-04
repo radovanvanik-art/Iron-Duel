@@ -321,7 +321,21 @@ const NICK_RE = /^[\p{L}\p{N}][\p{L}\p{N} _.\-]{1,13}$/u;
 let profiles = {};
 try { const v = JSON.parse(localStorage.getItem(PROF_KEY)); if (v && typeof v === 'object' && !Array.isArray(v)) profiles = v; } catch (_) {}
 const nickKey = str => 'n_' + str.trim().toLowerCase();      // predpona chráni pred kľúčmi ako __proto__
-const newProfile = (nick, color) => ({ nick, color, created: Date.now(), matches: 0, wins: 0, rounds: 0, kills: 0, bestLevel: 1, level: 1, xp: 0, last: 0, storyLoadout: null, story: null, achievements: [] });
+const newProfile = (nick, color) => ({ nick, color, created: Date.now(), matches: 0, wins: 0, rounds: 0, kills: 0, bestLevel: 1, level: 1, xp: 0, last: 0, storyLoadout: null, story: null, achievements: [], perks: {} });
+
+// ---------- veliteľské vylepšenia (trvalý "skill tree" naprieč všetkými zápasmi, mimo bežného výzbroje v obchode) ----------
+// Body sa NIKDE neukladajú samostatne - vždy sa dopočítajú z (najvyššia dosiahnutá hodnosť - 1) mínus už minuté, takže
+// existujúcim hráčom s vysokou hodnosťou sa body objavia hneď pri prvom otvorení obrazovky, bez potreby akejkoľvek migrácie.
+const PERKS = [
+  { id: 'cash', icon: '💰', title: 'Štartovací kapitál', desc: '+100 peňazí na začiatku zápasu za úroveň', maxRank: 3 },
+  { id: 'armor', icon: '🛡️', title: 'Veterán brnenia', desc: '+1 úroveň brnenia zadarmo na začiatku zápasu za úroveň', maxRank: 2 },
+  { id: 'fuel', icon: '⛽', title: 'Palivové nádrže', desc: '+1 úroveň paliva zadarmo na začiatku zápasu za úroveň', maxRank: 2 },
+  { id: 'xp', icon: '⭐', title: 'Skúsený veliteľ', desc: '+10 % XP zo zápasov za úroveň', maxRank: 3 },
+  { id: 'income', icon: '💵', title: 'Vojnová ekonomika', desc: '+10 % peňazí za zásahy a výhry za úroveň', maxRank: 2 },
+];
+const perkRank = (p, id) => (p && p.perks && p.perks[id]) | 0;
+const perkPointsSpent = p => !p || !p.perks ? 0 : Object.values(p.perks).reduce((s, v) => s + (v | 0), 0);
+const perkPointsAvailable = p => !p ? 0 : Math.max(0, (p.bestLevel || 1) - 1 - perkPointsSpent(p));
 
 // ---------- Supabase (účet cez Google) - profil/postup prihláseného hráča sa zrkadlí aj do cloudu, nielen do localStorage ----------
 const SUPABASE_URL = 'https://axrplnzgqrltmabhljih.supabase.co';
@@ -338,6 +352,7 @@ function cloudProfileRowToLocal(row) {
     storyLoadout: row.story_loadout || null,
     story: { unlocked: clampInt(row.story_unlocked, 1, STORY_MISSIONS.length, 1), done: Array.isArray(row.story_done) ? row.story_done.map(Boolean) : [] },
     achievements: Array.isArray(row.achievements) ? row.achievements.slice() : [],
+    perks: row.perks && typeof row.perks === 'object' && !Array.isArray(row.perks) ? Object.assign({}, row.perks) : {},
   };
 }
 async function cloudFetchProfile(userId) {
@@ -347,13 +362,23 @@ async function cloudFetchProfile(userId) {
 function cloudPush() {   // write-through: po uložení lokálneho profilu potichu zapíš aj do Supabase, keď je niekto prihlásený cez Google
   if (!cloudUser || !sb) return;
   const p = profiles[nickKey(cloudUser.nick)]; if (!p) return;
-  sb.from('profiles').update({
+  const payload = {
     color: p.color, matches: p.matches, wins: p.wins, rounds: p.rounds, kills: p.kills,
     best_level: p.bestLevel, level: p.level, xp: p.xp,
     last_played_at: p.last ? new Date(p.last).toISOString() : null,
     story_loadout: p.storyLoadout, story_unlocked: p.story ? p.story.unlocked : 1, story_done: p.story ? p.story.done : [],
     achievements: Array.isArray(p.achievements) ? p.achievements : [],
-  }).eq('id', cloudUser.id).then(({ error }) => { if (error) console.warn('Supabase sync zlyhal:', error.message); });
+    perks: p.perks && typeof p.perks === 'object' ? p.perks : {},
+  };
+  sb.from('profiles').update(payload).eq('id', cloudUser.id).then(({ error }) => {
+    if (!error) return;
+    console.warn('Supabase sync zlyhal:', error.message);
+    if (/perks/i.test(error.message || '') || /column/i.test(error.message || '')) {
+      // stĺpec "perks" ešte nie je v databáze (SQL skript sa ešte nespustil) - skús to znova bez neho, nech sa aspoň ostatné štatistiky nestratia
+      const fallback = Object.assign({}, payload); delete fallback.perks;
+      sb.from('profiles').update(fallback).eq('id', cloudUser.id).then(({ error: e2 }) => { if (e2) console.warn('Supabase sync (fallback) zlyhal:', e2.message); });
+    }
+  });
 }
 const hasRealProgress = p => !!p && (p.matches > 0 || (p.story && p.story.unlocked > 1) || p.storyLoadout);
 const progressScore = p => !p ? -1 : (p.story ? p.story.unlocked : 1) * 1000000 + (p.matches || 0) * 1000 + (p.kills || 0);   // na porovnanie "koľko postupu" má profil - kto má viac, ten je lepší kandidát na import
@@ -1354,8 +1379,8 @@ function makeTank(id, cfg) {
   const prof = cfg.nick ? getProfile(cfg.nick) : null;   // prihlásený hráč pokračuje na svojej uloženej veliteľskej hodnosti (level/XP)
   return {
     id, color: cfg.color, name: cfg.name, nick: cfg.nick || null, kills: 0, artPivotH: tankArtPivotH(cfg.color),
-    money: START_MONEY, ammo: Object.fromEntries(ORDER.map(k => [k, k === 'ap' ? Infinity : 0])), bot: cfg.bot | 0, botSt: null, hudRects: [],
-    speedLvl: 0, armorLvl: 0, fuelLvl: 0, wlv: Object.fromEntries(WLV_IDS.map(k => [k, 0])), wins: 0, streak: 0,
+    money: START_MONEY + 100 * perkRank(prof, 'cash'), ammo: Object.fromEntries(ORDER.map(k => [k, k === 'ap' ? Infinity : 0])), bot: cfg.bot | 0, botSt: null, hudRects: [],
+    speedLvl: 0, armorLvl: perkRank(prof, 'armor'), fuelLvl: perkRank(prof, 'fuel'), wlv: Object.fromEntries(WLV_IDS.map(k => [k, 0])), wins: 0, streak: 0,
     level: prof ? clampInt(prof.level, 1, MAX_LEVEL, 1) : 1, xp: prof ? Math.max(0, +prof.xp || 0) : 0, shields: new Array(10).fill(0), shT: 0, shieldMax: 0,
     fuel: FUEL_START, noFuelT: 0, rep: {}, repLast: {},
     x: 0, y: 0, vx: 0, power: 100, tilt: 0, face: 1, ang: 50,
@@ -1367,10 +1392,12 @@ const fuelCap = t => FUEL_CAP + 50 * t.fuelLvl;
 
 function reward(t, amount, key) {
   if (!t || amount <= 0) return;
+  if (t.nick && key !== 'level') amount = Math.round(amount * (1 + 0.1 * perkRank(getProfile(t.nick), 'income')));   // "Vojnová ekonomika" - bonus len na zárobky za hru, nie na odmenu za level-up
   t.money += amount; t.rep[key] = (t.rep[key] || 0) + amount;
 }
 function addXp(t, n) {
   if (!t || t.level >= MAX_LEVEL) return;
+  if (t.nick) n = Math.round(n * (1 + 0.1 * perkRank(getProfile(t.nick), 'xp')));   // "Skúsený veliteľ" - bonus XP
   t.xp += n; t.rep.xp = (t.rep.xp || 0) + n;
   while (t.level < MAX_LEVEL && t.xp >= xpToNext(t.level)) {
     t.xp -= xpToNext(t.level); t.level++;
@@ -2915,6 +2942,28 @@ function renderAchievements() {
     return '<div class="achRow' + (on ? ' on' : '') + '"><div class="achIcon">' + a.icon + '</div><div class="achBody"><div class="achTitle">' + esc(a.title) + '</div><div class="achDesc">' + esc(a.desc) + '</div></div><div class="achCheck">' + (on ? '✔' : '🔒') + '</div></div>';
   }).join('');
 }
+$('homePerksBtn').addEventListener('click', () => { hide('home'); renderPerks(); show('perks'); });
+$('perksBackBtn').addEventListener('click', () => { hide('perks'); show('home'); });
+function renderPerks() {
+  const nick = setup.players[0].nick, p = nick ? getProfile(nick) : null;
+  if (!p) { $('perksSummary').innerHTML = 'Prihlás sa (alebo hraj ako hosť s uloženým postupom), nech si môžeš odomykať veliteľské vylepšenia.'; $('perksList').innerHTML = ''; return; }
+  const avail = perkPointsAvailable(p);
+  $('perksSummary').innerHTML = 'Trvalé vylepšenia tvojho veliteľa, platia vo VŠETKÝCH zápasoch (nie je to výzbroj z obchodu). Za každú dosiahnutú hodnosť nad 1 dostaneš 1 bod. Dostupné body: <b>' + avail + '</b>';
+  $('perksList').innerHTML = PERKS.map(perk => {
+    const rank = perkRank(p, perk.id), maxed = rank >= perk.maxRank, can = !maxed && avail > 0;
+    return '<div class="achRow' + (rank ? ' on' : '') + '"><div class="achIcon">' + perk.icon + '</div><div class="achBody"><div class="achTitle">' + esc(perk.title) + '</div><div class="achDesc">' + esc(perk.desc) + '</div><div class="ranks">Úroveň ' + rank + ' / ' + perk.maxRank + '</div></div>' +
+      '<button class="perkBuy" data-perk="' + perk.id + '"' + (can ? '' : ' disabled') + '>' + (maxed ? 'MAX' : '+1 (1 bod)') + '</button></div>';
+  }).join('');
+}
+$('perksList').addEventListener('click', e => {
+  const btn = e.target.closest('[data-perk]'); if (!btn || btn.disabled) return;
+  const nick = setup.players[0].nick, p = nick ? getProfile(nick) : null; if (!p) return;
+  const perk = PERKS.find(x => x.id === btn.dataset.perk); if (!perk) return;
+  const rank = perkRank(p, perk.id);
+  if (rank >= perk.maxRank || perkPointsAvailable(p) <= 0) return;
+  p.perks = p.perks || {}; p.perks[perk.id] = rank + 1;
+  saveProfiles(); renderPerks();
+});
 $('homeLogoutBtn').addEventListener('click', () => {
   ask('Naozaj sa chceš odhlásiť?', () => {
     if (cloudUser && sb) { sb.auth.signOut(); }   // onAuthStateChange nižšie dorieši UI prepnutie na #login
