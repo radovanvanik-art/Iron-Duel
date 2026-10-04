@@ -190,10 +190,13 @@ const BIOMES = {
   mars: { name: 'Mars', icon: '🔴', windMul: 1.5, gust: 0.9, drag: 0, grav: 0.62, crater: 1.15, move: 0.9, fuel: 1.1, ice: false, bounce: 0.75, altWind: 0, obst: 0.5,
     sky: ['#2a1008', '#8a4a28', '#e0a868'], hills: ['#4a2416', '#5e3020', '#72402a'], ground: ['#c1613a', '#9c4a2c', '#5c2a18'], edge: '#ff8a5a', gtop: 330, gmid: 0.12, sun: '#ffb878', weather: 'dust',
     desc: 'Riedka atmosféra: slabšia gravitácia predĺži dolet striel, no časté piesočné búrky ich počas letu nepredvídateľne zahýbajú.' },
+  venus: { name: 'Venuša', icon: '🟠', windMul: 1.7, gust: 0.95, drag: 0.1, grav: 1.1, crater: 0.9, move: 0.65, fuel: 1.5, ice: false, bounce: 0.6, altWind: 0.1, obst: 0.5,
+    sky: ['#2a1806', '#8a5a1a', '#e8b84a'], hills: ['#4a2e0e', '#5e3a14', '#72481c'], ground: ['#8a5a1e', '#6a4214', '#3a260c'], edge: '#f0c050', gtop: 330, gmid: 0.12, sun: '#ffd878', weather: 'dust',
+    desc: 'Hustá toxická atmosféra: najsilnejší a najstálejší vietor spomedzi všetkých planét, vysoký tlak skracuje dolet a extrémna horúčava spomaľuje jazdu aj spotrebúva o 50 % viac paliva.' },
 };
-const BIOME_KEYS = Object.keys(BIOMES).filter(k => k !== 'moon' && k !== 'mars');   // mimozemské biómy sú len pre kampaň, nie pre náhodný výber v rýchlom zápase
-const missionWorld = m => m.terrain === 'moon' ? 'moon' : m.terrain === 'mars' ? 'mars' : 'earth';
-const WORLD_META = { earth: { name: 'Zem', icon: '🌍' }, moon: { name: 'Mesiac', icon: '🌑' }, mars: { name: 'Mars', icon: '🔴' } };
+const BIOME_KEYS = Object.keys(BIOMES).filter(k => k !== 'moon' && k !== 'mars' && k !== 'venus');   // mimozemské biómy sú len pre kampaň, nie pre náhodný výber v rýchlom zápase
+const missionWorld = m => m.terrain === 'moon' ? 'moon' : m.terrain === 'mars' ? 'mars' : m.terrain === 'venus' ? 'venus' : 'earth';
+const WORLD_META = { earth: { name: 'Zem', icon: '🌍' }, moon: { name: 'Mesiac', icon: '🌑' }, mars: { name: 'Mars', icon: '🔴' }, venus: { name: 'Venuša', icon: '🟠' } };
 let biomeKey = 'meadow';
 const biome = () => BIOMES[biomeKey];
 
@@ -300,12 +303,13 @@ const SAVE_KEY = 'ironDuelSave_v1', SETUP_KEY = 'ironDuelSetup_v1';
 const esc = str => String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const lum = c => { const v = parseInt(c.slice(1), 16); return (0.299 * (v >> 16) + 0.587 * ((v >> 8) & 255) + 0.114 * (v & 255)) / 255; };
 const isColor = c => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c);
-let setup = { n: 2, rounds: 5, terrain: 'random', difficulty: 'normal', gfx: 'auto', players: PALETTE.slice(0, 4).map((c, i) => ({ name: 'Hráč ' + (i + 1), color: c, nick: null, bot: 0 })) };
+let setup = { n: 2, rounds: 5, terrain: 'random', difficulty: 'normal', gfx: 'auto', sound: true, players: PALETTE.slice(0, 4).map((c, i) => ({ name: 'Hráč ' + (i + 1), color: c, nick: null, bot: 0 })) };
 try {
   const v = JSON.parse(localStorage.getItem(SETUP_KEY));
   if (v && (v.terrain === 'random' || BIOMES[v.terrain])) setup.terrain = v.terrain;
   if (v && DIFFICULTY[v.difficulty]) setup.difficulty = v.difficulty;
   if (v && ['auto', 'high', 'mid', 'low'].includes(v.gfx)) setup.gfx = v.gfx;
+  if (v && typeof v.sound === 'boolean') setup.sound = v.sound;
   if (v && Array.isArray(v.players) && v.players.length === 4) {
     setup.n = clampInt(v.n, 2, 4, 2); setup.rounds = clampInt(v.rounds, 1, 15, 5);
     setup.players = v.players.map((p, i) => ({ name: String(p.name || 'Hráč ' + (i + 1)).slice(0, 14), color: isColor(p.color) ? p.color : PALETTE[i], nick: typeof p.nick === 'string' ? p.nick : null, bot: clampInt(p.bot, 0, 3, 0) }));
@@ -424,18 +428,51 @@ function syncProfileLevel(t) {
   saveProfiles();
   checkAchievements(t.nick);
 }
+// ---------- denná výzva (jedna spoločná výzva pre všetkých na daný deň, odvodená z dátumu - netreba po nej siahať na server) ----------
+const DAILY_CHALLENGES = [
+  { id: 'win1', icon: '🏆', title: 'Vyhraj 1 zápas', target: 1, key: 'wins', xp: 40 },
+  { id: 'kills5', icon: '💥', title: 'Znič 5 tankov', target: 5, key: 'kills', xp: 35 },
+  { id: 'matches2', icon: '⚔️', title: 'Odohraj 2 zápasy', target: 2, key: 'matches', xp: 30 },
+  { id: 'rounds8', icon: '🔄', title: 'Odohraj 8 kôl', target: 8, key: 'rounds', xp: 30 },
+  { id: 'wins2', icon: '🥇', title: 'Vyhraj 2 zápasy', target: 2, key: 'wins', xp: 60 },
+  { id: 'kills12', icon: '☠️', title: 'Znič 12 tankov', target: 12, key: 'kills', xp: 55 },
+];
+function todayKey() { const d = new Date(); return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0'); }
+function dailyChallengeForToday() {
+  const dk = todayKey(); let h = 0;
+  for (let i = 0; i < dk.length; i++) h = (h * 31 + dk.charCodeAt(i)) | 0;
+  return DAILY_CHALLENGES[Math.abs(h) % DAILY_CHALLENGES.length];
+}
+function ensureDaily(p) {   // vráti true, ak práve začal nový deň (postup sa vynuloval)
+  const dk = todayKey();
+  if (!p.daily || p.daily.date !== dk) { p.daily = { date: dk, wins: 0, matches: 0, kills: 0, rounds: 0, claimed: false }; return true; }
+  return false;
+}
+function grantProfileXp(p, amount) {   // rovnaká logika levelovania ako addXp(), len priamo na uloženom profile (mimo živého zápasu)
+  if (!p || p.level >= MAX_LEVEL) return;
+  p.xp = (p.xp || 0) + amount;
+  while (p.level < MAX_LEVEL && p.xp >= xpToNext(p.level)) { p.xp -= xpToNext(p.level); p.level++; p.bestLevel = Math.max(p.bestLevel || 1, p.level); }
+  if (p.level >= MAX_LEVEL) p.xp = 0;
+}
 function recordStats(winner) {
   const done = [];
+  const dc = dailyChallengeForToday();
+  const dailyWins = [];
   tanks.forEach(t => {
     if (!t.nick) return;
     const key = nickKey(t.nick);
     const p = Object.prototype.hasOwnProperty.call(profiles, key) ? profiles[key] : (profiles[key] = newProfile(t.nick, t.color));
     p.matches++; if (t === winner) p.wins++;
     p.rounds += t.wins; p.kills += t.kills || 0; p.bestLevel = Math.max(p.bestLevel, t.level); p.last = Date.now();
+    ensureDaily(p);
+    p.daily.matches++; if (t === winner) p.daily.wins++;
+    p.daily.rounds += t.wins; p.daily.kills += t.kills || 0;
+    if (!p.daily.claimed && (p.daily[dc.key] || 0) >= dc.target) { p.daily.claimed = true; grantProfileXp(p, dc.xp); dailyWins.push(t.nick); }
     done.push(t.nick);
   });
   saveProfiles();
   done.forEach(checkAchievements);
+  if (dailyWins.length) setTimeout(() => banner('🗓️ Denná výzva splnená: ' + dc.title + ' (+' + dc.xp + ' XP)', 3200), 400);
   return done;
 }
 function clampInt(v, a, b, d) { v = parseInt(v, 10); return isNaN(v) ? d : Math.max(a, Math.min(b, v)); }
@@ -630,8 +667,49 @@ const STORY_MISSIONS = [
     lose: 'Brána sa nedá prelomiť narýchlo. Priprav sa poriadne na posledný útok.' },
   { title: 'Najvyšší Overlord Thessarax', terrain: 'mars', bots: [{ lvl: 3, name: 'Overlord Thessarax' }, { lvl: 3, name: 'Entita Kallax' }, { lvl: 3, name: 'Droid Vryn' }], rounds: 3, money: 8500,
     text: 'Posledná bitka celej kampane. Overlord Thessarax velí osobne, po boku dvoch najsilnejších entít flotily. Daj do toho úplne všetko, veliteľ.',
-    win: 'Overlord Thessarax je porazený! Zem, Mesiac aj Mars sú slobodné. Si najlepší tankový veliteľ celej slnečnej sústavy.',
+    win: 'Overlord Thessarax je porazený! Zem, Mesiac aj Mars sú slobodné. Veliteľstvo však zachytáva posledný, najsilnejší signál – prichádza z Venuše.',
     lose: 'Aj overlordi sa dajú poraziť. Nabudúce to dokážeš, veliteľ – pre celú slnečnú sústavu.' },
+  // ---------- VENUŠA: hustá toxická atmosféra, extrémny tlak a vietor, posledná a najťažšia flotila ----------
+  { title: 'Zostup do oblakov', terrain: 'venus', bots: [{ lvl: 2, name: 'Strážca Oblakov Vex' }], rounds: 2, money: 8900,
+    text: 'Posledný signál viedol na Venušu. Hustá sírová atmosféra pohlcuje svetlo aj zvuk a tlak drví všetko, čo nie je poriadne obrnené.',
+    win: 'Strážca Oblakov je zničený. Pod mrakmi sa skrýva povrch plný stuhnutej lávy.',
+    lose: 'Hustá atmosféra ťa zaskočila – strely sa tu správajú úplne inak. Priprav sa a skús to znova.' },
+  { title: 'Sírová búrka', terrain: 'venus', bots: [{ lvl: 2, name: 'Veliteľka Kyselina' }], rounds: 2, money: 9100,
+    text: 'Vietor tu fúka extrémnou, takmer nepretržitou silou a mení smer bez varovania. Veliteľka Kyselina to pozná dokonale.',
+    win: 'Búrka utíchla. Prieskumné senzory hlásia ďalšiu jednotku pri lávových poliach.',
+    lose: 'Sírová búrka ťa odfúkla od cieľa. Sleduj žltý terč dopadu pozornejšie než inde.' },
+  { title: 'Roztavená planina', terrain: 'venus', bots: [{ lvl: 3, name: 'Major Vulkanit' }], rounds: 2, money: 9350,
+    text: 'Povrch je posiaty čerstvou lávou, ktorá žiari aj cez hustý opar. Major Vulkanit sa v tomto pekle cíti ako doma.',
+    win: 'Vulkanit je porazený. Veliteľstvo nepriateľa je už nablízku.',
+    lose: 'Žiara lávy ťa oslepila v nesprávnej chvíli. Priprav si lepší štít.' },
+  { title: 'Údolie tlaku', terrain: 'venus', bots: [{ lvl: 3, name: 'Kapitán Perihélium' }, { lvl: 3, name: 'Poručíčka Koróna' }], rounds: 2, money: 9600,
+    text: 'V tomto údolí je atmosférický tlak najvyšší na celej planéte. Dvaja velitelia ho využívajú na krátke, no smrtiace výstrely.',
+    win: 'Údolie je dobyté. Zostáva preniknúť k samotnému jadru základne.',
+    lose: 'Tlak tu skresľuje každý výstrel. Doplň si zásoby a skús to znova.' },
+  { title: 'Jadro základne', terrain: 'venus', bots: [{ lvl: 3, name: 'Generál Žiara' }, { lvl: 3, name: 'Majorka Opar' }], rounds: 2, money: 9900,
+    text: 'Jadro nepriateľskej základne je ukryté hlboko pod mrakmi. Generál Žiara a Majorka Opar ho bránia bez zľutovania.',
+    win: 'Jadro je zničené. Nad planinou sa sťahuje posledná obranná flotila.',
+    lose: 'Opar ti vzal výhľad presne na poslednú sekundu. Skús to znova, veliteľ.' },
+  { title: 'Posledná flotila', terrain: 'venus', bots: [{ lvl: 3, name: 'Plukovník Sopúch' }, { lvl: 3, name: 'Kapitánka Para' }, { lvl: 3, name: 'Droid Sykot' }], rounds: 2, money: 10200,
+    text: 'Traja velitelia naraz bránia posledné prístupové cesty k veliteľstvu. Hustá para im dáva dokonalý kryt.',
+    win: 'Flotila je rozprášená. K veliteľstvu nepriateľa už nič nestojí v ceste.',
+    lose: 'Traja súperi v hustej pare sú nemilosrdní. Priprav sa lepšie a skús to znova.' },
+  { title: 'Predsieň veliteľstva', terrain: 'venus', bots: [{ lvl: 3, name: 'Majorka Vrenie' }, { lvl: 3, name: 'Kapitán Škvára' }, { lvl: 3, name: 'Entita Popol' }], rounds: 3, money: 10500,
+    text: 'Vzduch sa tu takmer varí. Traja strážcovia bránia poslednú prístupovú cestu do útrob veliteľstva.',
+    win: 'Predsieň je dobytá. Pred tebou je už len samotné veliteľstvo invázie.',
+    lose: 'Vrúca atmosféra ťa vyčerpala skôr, než si to čakal. Doplň si palivo a skús to znova.' },
+  { title: 'Útroby veliteľstva', terrain: 'venus', bots: [{ lvl: 3, name: 'Generálka Výheň' }, { lvl: 3, name: 'Plukovník Dusík' }, { lvl: 3, name: 'Droid Kyslík' }], rounds: 3, money: 10800,
+    text: 'Hlboko pod oblakmi sa skrýva srdce celej invázie. Traja najskúsenejší velitelia ho bránia do posledného dychu.',
+    win: 'Útroby veliteľstva sú dobyté. Zostáva už len samotná najvyššia veliteľka.',
+    lose: 'Výheň, dusík, kyslík – táto atmosféra neodpúšťa chyby. Priprav sa a skús to znova.' },
+  { title: 'Trón oblakov', terrain: 'venus', bots: [{ lvl: 3, name: 'Najvyššia Veliteľka Lucifer' }, { lvl: 3, name: 'Strážca Koróna' }, { lvl: 3, name: 'Entita Vex' }], rounds: 3, money: 11100,
+    text: 'Na vrchole najvyššej hory planéty, nad oblakmi, sídli Najvyššia Veliteľka Lucifer. Toto je jej posledná bašta.',
+    win: 'Trón oblakov padá. Lucifer ustupuje do posledného, zúfalého postavenia.',
+    lose: 'Trón oblakov sa nedá dobyť narýchlo. Vylepši si výzbroj a skús to znova.' },
+  { title: 'Najvyššia Veliteľka Lucifer', terrain: 'venus', bots: [{ lvl: 3, name: 'Najvyššia Veliteľka Lucifer' }, { lvl: 3, name: 'Entita Koróna' }, { lvl: 3, name: 'Entita Vex' }], rounds: 3, money: 12000, bonusAmmo: { laser: 4, empBig: 3 },
+    text: 'Posledná bitka úplne celej kampane. Veliteľstvo ti na poslednú cestu pribalilo svoju najsilnejšiu výzbroj. Lucifer velí osobne, po boku dvoch svojich najvernejších entít. Toto je ono, veliteľ.',
+    win: 'Najvyššia Veliteľka Lucifer je porazená! Zem, Mesiac, Mars aj Venuša sú slobodné. Si najlepší tankový veliteľ v histórii celej slnečnej sústavy.',
+    lose: 'Aj najvyššie veliteľky sa dajú poraziť. Nabudúce to dokážeš, veliteľ – toto je posledný krok.' },
 ];
 // POZOR pre budúce úpravy kampane: postup prihláseného hráča sa odteraz ukladá v jeho PROFILE (PROF_KEY), nie pod touto
 // verziovanou kľúčou - takže ho pridávanie/úprava misií už nevymaže. Nové misie preto VŽDY len PRIPÁJAJ na koniec zoznamu
@@ -699,6 +777,7 @@ const WORLD_LIGHT = {
   earth: { dx: .55, dy: .33, dz: .76, ambient: .22, term: .32, atmo: 'rgba(90,155,255,.35)', atmoR: 1.3, sheen: .22, rim: .35, rimCol: '0,0,0' },
   moon:  { dx: .6, dy: .18, dz: .78, ambient: .035, term: .05, atmo: 'rgba(140,140,160,.07)', atmoR: 1.08, sheen: .03, rim: .55, rimCol: '0,0,0' },
   mars:  { dx: .52, dy: .28, dz: .81, ambient: .14, term: .16, atmo: 'rgba(224,150,96,.26)', atmoR: 1.2, sheen: .07, rim: .4, rimCol: '40,14,4' },
+  venus: { dx: .5, dy: .3, dz: .8, ambient: .5, term: .7, atmo: 'rgba(232,184,74,.55)', atmoR: 1.42, sheen: .04, rim: .25, rimCol: '60,30,0' },   // hustý mrak rozptyľuje svetlo takmer rovnomerne - vysoký ambient, veľmi mäkký/široký terminátor
 };
 function globeBump(latDeg, lonDeg) {   // pseudonáhodné "krátery"/hrbole pre Mesiac a Mars - mimo zemského biómového tieňovania
   const n = hash2(Math.round(latDeg * 1.7) + 11, Math.round(lonDeg * 1.7) + 29);
@@ -720,6 +799,7 @@ const GLOBE_ANCHORS_BY_WORLD = {
   },
   moon: { moon: { lat: 10, lon: 0, r: 200 } },   // jediný bióm pokrýva prakticky celú guľu
   mars: { mars: { lat: 10, lon: 0, r: 200 } },
+  venus: { venus: { lat: 10, lon: 0, r: 200 } },
 };
 function hash2(a, b) { const s = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453; return s - Math.floor(s); }
 function sphericalOffset(latDeg, lonDeg, bearingDeg, distDeg) {   // bod vo zvolenej vzdialenosti/smere od kotvy (veľkokruh)
@@ -745,7 +825,8 @@ const ACHIEVEMENTS = [
   { id: 'lv20', icon: '💫', title: 'Hodnosť LV 20', desc: 'Dosiahni veliteľskú hodnosť 20.', check: p => (p.bestLevel || 1) >= 20 },
   { id: 'zem_dobyta', icon: '🌍', title: 'Zem dobytá', desc: 'Dokonči kampaň na Zemi.', check: p => profileWorldUnlocked(p, 'moon') },
   { id: 'mesiac_dobyty', icon: '🌑', title: 'Mesiac dobytý', desc: 'Dokonči kampaň na Mesiaci.', check: p => profileWorldUnlocked(p, 'mars') },
-  { id: 'cela_kampan', icon: '🏆', title: 'Veliteľ slnečnej sústavy', desc: 'Dokonči celú kampaň - Zem, Mesiac aj Mars.', check: p => !!p.story && p.story.unlocked >= STORY_MISSIONS.length },
+  { id: 'mars_dobyty', icon: '🔴', title: 'Mars dobytý', desc: 'Dokonči kampaň na Marse.', check: p => profileWorldUnlocked(p, 'venus') },
+  { id: 'cela_kampan', icon: '🏆', title: 'Veliteľ slnečnej sústavy', desc: 'Dokonči celú kampaň - Zem, Mesiac, Mars aj Venušu.', check: p => !!p.story && p.story.unlocked >= STORY_MISSIONS.length },
   { id: 'vytrvalec', icon: '⏱️', title: 'Vytrvalec', desc: 'Odohraj 150 kôl.', check: p => p.rounds >= 150 },
 ];
 function checkAchievements(nick) {   // zavolá sa po každej zmene štatistík - potichu odomkne nové odznaky a ukáže banner
@@ -985,7 +1066,7 @@ function renderStoryList() {
     if (window.ResizeObserver) new ResizeObserver(() => globeResize()).observe($('globeWrap'));   // vždy prepočíta podľa skutočnej veľkosti (rieši to, že pri prvom zobrazení ešte nemusí byť layout hotový)
     $('worldTabs').addEventListener('click', e => { const b = e.target.closest('[data-world]'); if (b && !b.disabled) switchGlobeWorld(b.dataset.world); });
   }
-  $('worldTabs').innerHTML = ['earth', 'moon', 'mars'].map(w => {
+  $('worldTabs').innerHTML = ['earth', 'moon', 'mars', 'venus'].map(w => {
     const unlocked = worldUnlocked(w), on = w === GLOBE.world;
     return '<button type="button" class="worldTab' + (on ? ' on' : '') + (unlocked ? '' : ' locked') + '" data-world="' + w + '"' + (unlocked ? '' : ' disabled') + '>' +
       WORLD_META[w].icon + ' ' + WORLD_META[w].name + (unlocked ? '' : ' 🔒') + '</button>';
@@ -1223,10 +1304,29 @@ let actx = null;
 function initAudio() {
   if (actx) return;
   try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { actx = null; }
+  if (actx) startMusic();
+}
+let musicGain = null;
+function startMusic() {   // jemné ambientné podložie (pár detunovaných sínusoviek s pomalým LFO driftom), nenápadné pozadie namiesto ticha
+  if (!actx || musicGain) return;
+  musicGain = actx.createGain(); musicGain.gain.value = 0; musicGain.connect(actx.destination);
+  musicGain.gain.linearRampToValueAtTime(setup.sound ? 0.028 : 0, actx.currentTime + 2);
+  [55, 82.41, 110.3].forEach((f, i) => {
+    const o = actx.createOscillator(), g = actx.createGain(), lfo = actx.createOscillator(), lg = actx.createGain();
+    o.type = 'sine'; o.frequency.value = f; g.gain.value = i === 0 ? 1 : 0.45;
+    lfo.frequency.value = 0.025 + i * 0.011; lg.gain.value = 2.2;
+    lfo.connect(lg).connect(o.detune); lfo.start();
+    o.connect(g).connect(musicGain); o.start();
+  });
+}
+function setMusicVolume() { if (musicGain) musicGain.gain.linearRampToValueAtTime(setup.sound ? 0.028 : 0, actx.currentTime + 0.6); }
+function vibrate(ms) {   // jemná haptická odozva na mobile (na desktope navigator.vibrate chýba alebo nič nerobí - bezpečné zavolať vždy)
+  if (!setup.sound) return;
+  try { if (navigator.vibrate) navigator.vibrate(ms); } catch (_) {}
 }
 let activeSnd = 0, noiseBuf = null;
 function tone(f0, f1, dur, type = 'square', vol = 0.06) {
-  if (!actx || activeSnd > 26) return;
+  if (!setup.sound || !actx || activeSnd > 26) return;
   const o = actx.createOscillator(), g = actx.createGain(), t = actx.currentTime;
   o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
   g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
@@ -1234,7 +1334,7 @@ function tone(f0, f1, dur, type = 'square', vol = 0.06) {
   activeSnd++; o.onended = () => activeSnd--;
 }
 function noise(dur, vol = 0.15, cutoff = 900) {
-  if (!actx || activeSnd > 26) return;
+  if (!setup.sound || !actx || activeSnd > 26) return;
   if (!noiseBuf) {
     const n = actx.sampleRate * 2; noiseBuf = actx.createBuffer(1, n, actx.sampleRate);
     const d = noiseBuf.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
@@ -1654,7 +1754,7 @@ function nukeFx(x, y, a) {
   for (let i = 0; i < 90; i++) { const ang = rand(0, 6.28), v = rand(80, 520); spark(x, y, Math.cos(ang) * v, Math.sin(ang) * v - 120, ['#ffffff', '#ffe08a', '#ff8a2a', '#ff4d1a'][i % 4], rand(0.7, 1.6), rand(4, 12), 300, 'glow'); }
   for (let i = 0; i < 40; i++) spark(x + rand(-14, 14), y - i * 7, rand(-25, 25), rand(-260, -120), 'rgba(80,70,65,.75)', rand(1.2, 2.4), rand(10, 22), -10);
   for (let i = 0; i < 34; i++) spark(x + rand(-70, 70), y - 260 - rand(0, 40), rand(-170, 170), rand(-50, 20), 'rgba(140,110,90,.7)', rand(1.2, 2.2), rand(10, 20), -6);
-  noise(1.4, 0.5, 250); tone(70, 18, 1.2, 'sawtooth', 0.14);
+  noise(1.4, 0.5, 250); tone(70, 18, 1.2, 'sawtooth', 0.14); vibrate([40, 30, 90]);
   shake = Math.max(shake, 32);
 }
 function fire(t) {
@@ -1673,7 +1773,7 @@ function fire(t) {
   }
   const sp = a.speed * powerMul(t.power);
   projectiles.push({ x: m.x, y: m.y, vx: m.dx * sp, vy: m.dy * sp, type, owner: t.id, bounces: a.bounces || 0, life: 0 });
-  tone(220, 70, 0.18, 'sawtooth', 0.07); noise(0.08, 0.08, 1500);
+  tone(220, 70, 0.18, 'sawtooth', 0.07); noise(0.08, 0.08, 1500); vibrate(10);
   for (let i = 0; i < 6; i++) spark(m.x, m.y, m.dx * 120 + rand(-60, 60), m.dy * 120 + rand(-60, 60), '#ffd27a', 0.25, 3, 300, 'glow');
   glows.push({ x: m.x, y: m.y, r: 26, life: 0.12, max: 0.12, color: '#ffe9a0' });
   shake = Math.max(shake, 2);
@@ -1725,7 +1825,7 @@ function killTank(t, ownerId) {
     const a = rand(0, 6.28), v = rand(60, 380);
     spark(t.x, t.y - 14, Math.cos(a) * v, Math.sin(a) * v - 100, ['#ff7043', '#ffd54a', '#444', '#ff3d00'][i % 4], rand(.5, 1.4), rand(3, 8), 300, i % 4 === 2 ? '' : 'glow');
   }
-  noise(0.7, 0.3, 500); tone(120, 30, 0.6, 'sawtooth', 0.1);
+  noise(0.7, 0.3, 500); tone(120, 30, 0.6, 'sawtooth', 0.1); vibrate(80);
   shake = 14;
   checkRoundEnd();
 }
@@ -1761,7 +1861,7 @@ function explosion(x, y, type, ownerId) {
     spark(x, y, Math.cos(ang) * v, Math.sin(ang) * v - 60, i % 3 ? a.color : '#ffedb0', rand(.3, .8), rand(2, 2 + a.splash / 14), 300, 'glow');
   }
   for (let i = 0; i < 6; i++) spark(x, y, rand(-30, 30), rand(-70, -20), 'rgba(90,90,90,.7)', rand(.6, 1.1), rand(5, 10), -20);
-  noise(0.25 + a.splash / 200, 0.2, 700); tone(140, 40, 0.25, 'sine', 0.1);
+  noise(0.25 + a.splash / 200, 0.2, 700); tone(140, 40, 0.25, 'sine', 0.1); vibrate(Math.min(55, 12 + a.splash / 4));
   shake = Math.max(shake, a.splash / 6);
   if (a.cluster) for (let i = 0; i < a.cluster; i++) {   // ananás sa rozpadne na malé bombičky
     const ang = -Math.PI / 2 + rand(-1.05, 1.05), v = rand(160, 330);
@@ -2713,7 +2813,39 @@ $('creditsBackBtn').addEventListener('click', () => { hide('credits'); show('hom
 function renderLogin() { $('loginMsg').textContent = loginError || ''; }
 function enterHome() {
   hide('login'); refreshContinue(); renderHome(); show('home');
+  maybeShowTutorial();
 }
+// ---------- krátky návod pre nových hráčov (zobrazí sa raz automaticky, potom dostupný kedykoľvek cez Nastavenia) ----------
+const TUTORIAL_KEY = 'ironDuelTutorialSeen_v1';
+const TUTORIAL_STEPS = [
+  { icon: '🎖️', title: 'Vitaj, veliteľ!', text: 'Iron Duel je ťahový delostrelecký súboj tankov. Cieľ je jednoduchý: znič súperove tanky skôr, než oni zničia teba.' },
+  { icon: '🎯', title: 'Mierenie a streľba', text: '▲ ▼ nakláňajú hlaveň, posuvník dole nastavuje silu výstrelu a tlačidlo STRELA vystrelí. ◀ ▶ pohybujú tankom, kým máš palivo.' },
+  { icon: '💥', title: 'Munícia', text: 'Tlačidlo s muníciou (napr. "AP") prepína typy striel - každá má iný efekt (väčší kráter, EMP, laser, oprava...). Vyber podľa situácie.' },
+  { icon: '🌬️', title: 'Vietor a terén', text: 'Sleduj smer a silu vetra v HUD - ovplyvní dráhu strely. Každý biom (púšť, hory, mesiac...) mení fyziku inak, popis nájdeš pred misiou.' },
+  { icon: '📖', title: 'Kampaň', text: 'V kampani postupne dobýjaš Zem, Mesiac, Mars a Venušu. Za víťazstvá získavaš peniaze a XP, ktoré míňaš na vylepšenia medzi misiami.' },
+  { icon: '🏆', title: 'Rebríček a odznaky', text: 'Prihlás sa cez Google, nech sa tvoj postup ukladá do cloudu, dostaneš sa do globálneho rebríčka a začneš zbierať odznaky za úspechy.' },
+];
+let tutStep = 0, tutReturnTo = null;
+function renderTutorial() {
+  const s = TUTORIAL_STEPS[tutStep];
+  $('tutBody').innerHTML = '<div style="font-size:40px;text-align:center;margin-bottom:8px">' + s.icon + '</div><h2 style="text-align:center;margin:0 0 8px">' + esc(s.title) + '</h2><p style="text-align:center">' + esc(s.text) + '</p>';
+  $('tutDots').textContent = (tutStep + 1) + ' / ' + TUTORIAL_STEPS.length;
+  $('tutNextBtn').textContent = tutStep === TUTORIAL_STEPS.length - 1 ? 'Hotovo ✔' : 'Ďalej ▶';
+}
+function openTutorial(returnTo) { tutStep = 0; tutReturnTo = returnTo || null; renderTutorial(); show('tutorial'); }
+function closeTutorial() {
+  try { localStorage.setItem(TUTORIAL_KEY, '1'); } catch (_) {}
+  hide('tutorial');
+  if (tutReturnTo) { show(tutReturnTo); tutReturnTo = null; }
+}
+function maybeShowTutorial() {
+  let seen = false;
+  try { seen = localStorage.getItem(TUTORIAL_KEY) === '1'; } catch (_) {}
+  if (!seen) openTutorial();
+}
+$('tutNextBtn').addEventListener('click', () => { if (tutStep < TUTORIAL_STEPS.length - 1) { tutStep++; renderTutorial(); } else closeTutorial(); });
+$('tutSkipBtn').addEventListener('click', closeTutorial);
+$('tutBtn').addEventListener('click', () => { hide('settings'); openTutorial('settings'); });
 let importCandidateNick = null;   // keď je hráč prihlásený cez Google a v TOMTO zariadení existuje iný (hosťovský) profil s väčším postupom - jeho meno, nech ho ponúkneme na ručný import do cloud účtu
 function renderHome() {
   const nick = setup.players[0].nick, prof = nick ? getProfile(nick) : null;
@@ -2721,6 +2853,7 @@ function renderHome() {
   const sv = readSave();
   $('homeContBtn').style.display = sv ? '' : 'none';
   if (sv) $('homeContBtn').textContent = '▶ Pokračovať: kolo ' + sv.round + ' · ' + sv.players.length + ' hráči';
+  renderHomeDaily(prof);
   importCandidateNick = null;
   const importBtn = $('homeImportBtn');
   if (cloudUser) {
@@ -2731,6 +2864,17 @@ function renderHome() {
       importBtn.style.display = '';
     } else importBtn.style.display = 'none';
   } else importBtn.style.display = 'none';
+}
+function renderHomeDaily(prof) {
+  const card = $('homeDailyCard');
+  if (!prof) { card.style.display = 'none'; return; }
+  if (ensureDaily(prof)) saveProfiles();   // nový deň - vynulovaný postup sa hneď aj uloží (vrátane cloudu)
+  const dc = dailyChallengeForToday(), have = prof.daily[dc.key] || 0, pct = Math.min(100, Math.round(100 * have / dc.target));
+  const done = prof.daily.claimed;
+  card.className = done ? 'done' : '';
+  card.style.display = '';
+  card.innerHTML = '<div>' + dc.icon + ' <b>Denná výzva:</b> ' + esc(dc.title) + (done ? ' ✔' : ' (' + Math.min(have, dc.target) + '/' + dc.target + ')') + (done ? '' : ' · +' + dc.xp + ' XP') + '</div>' +
+    '<div class="dcBar"><div class="dcFill" style="width:' + pct + '%"></div></div>';
 }
 $('googleLoginBtn').addEventListener('click', () => {
   if (!sb) { loginError = 'Prihlásenie cez Google momentálne nie je dostupné (skontroluj internetové pripojenie).'; renderLogin(); return; }
@@ -2892,11 +3036,32 @@ $('setupRows').addEventListener('change', e => {
 });
 // rebríček
 function renderBoard() {
+  $('boardBody').innerHTML = '<p>Načítavam rebríček…</p>';
+  renderBoardGlobal();
+}
+function localBoardRowsHtml() {
   const list = Object.entries(profiles).map(([k, p]) => [k, p]).sort((a, b) => b[1].wins - a[1].wins || b[1].rounds - a[1].rounds || b[1].matches - a[1].matches);
-  $('boardBody').innerHTML = list.length ? '<table class="bt"><tr><th>#</th><th>Prezývka</th><th>Zápasy</th><th>Výhry</th><th>%</th><th>Kolá</th><th>Tanky</th><th>Max LV</th><th></th></tr>' +
+  return list.length ? '<table class="bt"><tr><th>#</th><th>Prezývka</th><th>Zápasy</th><th>Výhry</th><th>%</th><th>Kolá</th><th>Tanky</th><th>Max LV</th><th></th></tr>' +
     list.map(([k, p], i) => '<tr><td>' + (i + 1) + '</td><td><i class="dot" style="background:' + (isColor(p.color) ? p.color : '#888') + '"></i>' + esc(p.nick) + '</td><td>' + p.matches + '</td><td>' + p.wins + '</td><td>' +
       (p.matches ? Math.round(100 * p.wins / p.matches) : 0) + '</td><td>' + p.rounds + '</td><td>' + p.kills + '</td><td>' + p.bestLevel + '</td><td><button class="x" data-del="' + esc(k) + '" title="Zmazať profil">✕</button></td></tr>').join('') + '</table>'
-    : '<p>Zatiaľ tu nie je žiadny profil. Prihlás sa prezývkou v menu a odohraj zápas.</p>';
+    : '<p>Zatiaľ tu nie je žiadny profil. Odohraj zápas, nech sa ti začne zbierať štatistika.</p>';
+}
+async function renderBoardGlobal() {   // globálny rebríček zo Supabase (verejne čitateľná tabuľka profiles) - zoradený podľa veliteľskej hodnosti a výhier; keď je offline/nedostupný, potichu padne späť na lokálny zoznam
+  let rows = null;
+  if (sb) {
+    try {
+      const { data, error } = await sb.from('profiles').select('nick,color,level,wins,matches,rounds,kills,best_level').order('level', { ascending: false }).order('wins', { ascending: false }).limit(50);
+      if (!error && Array.isArray(data)) rows = data;
+    } catch (_) {}
+  }
+  const myKey = cloudUser ? nickKey(cloudUser.nick) : (setup.players[0].nick ? nickKey(setup.players[0].nick) : null);
+  const globalHtml = rows
+    ? (rows.length ? '<table class="bt"><tr><th>#</th><th>Prezývka</th><th>LV</th><th>Výhry</th><th>Zápasy</th><th>%</th><th>Kolá</th><th>Tanky</th></tr>' +
+        rows.map((p, i) => '<tr' + (myKey && nickKey(p.nick) === myKey ? ' class="me"' : '') + '><td>' + (i + 1) + '</td><td><i class="dot" style="background:' + (isColor(p.color) ? p.color : '#888') + '"></i>' + esc(p.nick) + '</td><td>' + (p.level || 1) + '</td><td>' + p.wins + '</td><td>' + p.matches + '</td><td>' +
+          (p.matches ? Math.round(100 * p.wins / p.matches) : 0) + '</td><td>' + p.rounds + '</td><td>' + p.kills + '</td></tr>').join('') + '</table>'
+      : '<p>Zatiaľ tu nie je žiadny hráč s Google účtom. Buď prvý!</p>')
+    : '<p class="muted">Globálny rebríček sa nepodarilo načítať (skontroluj internet). Zobrazujem len profily v tomto zariadení.</p>';
+  $('boardBody').innerHTML = globalHtml + '<div class="boardSub">Profily v tomto zariadení</div>' + localBoardRowsHtml();
 }
 $('boardBtn').addEventListener('click', () => { hide('settings'); renderBoard(); show('board'); });
 $('boardClose').addEventListener('click', () => { hide('board'); show('settings'); });
@@ -2928,6 +3093,13 @@ $('padBtn').addEventListener('click', () => {
   $('padBtn').textContent = 'Dotykové ovládanie: ' + (off ? 'vyp' : 'zap');
 });
 if (!window.matchMedia('(pointer: coarse)').matches) { document.body.classList.add('nopad'); $('padBtn').textContent = 'Dotykové ovládanie: vyp'; }
+$('soundBtn').textContent = '🔊 Zvuk a vibrácie: ' + (setup.sound ? 'zap' : 'vyp');
+$('soundBtn').addEventListener('click', () => {
+  setup.sound = !setup.sound; saveSetup();
+  $('soundBtn').textContent = '🔊 Zvuk a vibrácie: ' + (setup.sound ? 'zap' : 'vyp');
+  if (setup.sound) initAudio();
+  setMusicVolume();
+});
 
 // dotykové ovládače
 const padButtons = [], padEls = [];
@@ -3108,11 +3280,11 @@ document.querySelectorAll('.menuBg').forEach(el => {
       const { data: { session } } = await sb.auth.getSession();
       if (session && session.user) {
         const ok = await enterCloudSession(session.user);
-        if (ok) { hide('login'); refreshContinue(); renderHome(); show('home'); return; }
+        if (ok) { hide('login'); refreshContinue(); renderHome(); show('home'); maybeShowTutorial(); return; }
       }
     } catch (e) { console.warn('Supabase relácia sa nepodarilo overiť:', e); }
   }
-  if (setup.players[0].nick && getProfile(setup.players[0].nick)) { refreshStoryProgressSource(); hide('login'); renderHome(); show('home'); }
+  if (setup.players[0].nick && getProfile(setup.players[0].nick)) { refreshStoryProgressSource(); hide('login'); renderHome(); show('home'); maybeShowTutorial(); }
   else { setup.players[0].nick = null; refreshStoryProgressSource(); renderLogin(); }
 })();
 let last = performance.now(), slowMs = 0;

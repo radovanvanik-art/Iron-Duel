@@ -1,0 +1,16 @@
+{
+  "name": "Iron Duel: Tank Commanders",
+  "short_name": "Iron Duel",
+  "description": "Ťahový delostrelecký súboj tankov – kampaň naprieč Zemou, Mesiacom, Marsom a Venušou, aj multiplayer.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#080b12",
+  "theme_color": "#1c2440",
+  "icons": [
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
