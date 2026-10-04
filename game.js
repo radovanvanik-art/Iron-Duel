@@ -498,6 +498,36 @@ function ensureWeekly(p) {   // vráti true, ak práve začal nový týždeň (p
   if (!p.weekly || p.weekly.date !== wk) { p.weekly = { date: wk, wins: 0, matches: 0, kills: 0, rounds: 0, claimed: false }; return true; }
   return false;
 }
+// ---------- priatelia (len pre hráčov prihlásených cez Google - potrebuje stabilné id na prepojenie účtov; tabuľka "friends" v Supabase) ----------
+// pozvánkový odkaz má tvar .../index.html?friend=Prezývka - keď ho niekto otvorí a je prihlásený, hneď sa pridáte navzájom (žiadne schvaľovanie, netreba to komplikovať)
+let pendingFriendInvite = null;
+try {
+  const _qp = new URLSearchParams(location.search);
+  if (_qp.has('friend')) {
+    pendingFriendInvite = (_qp.get('friend') || '').trim().slice(0, 14) || null;
+    _qp.delete('friend');
+    const _qs = _qp.toString();
+    history.replaceState(null, '', location.pathname + (_qs ? '?' + _qs : '') + location.hash);
+  }
+} catch (_) {}
+let friendInviteNoticeShown = false;
+async function processPendingFriendInvite() {   // zavolá sa vždy po vstupe na domovskú obrazovku - no-op, ak nič nečaká alebo hráč nie je prihlásený cez Google
+  if (!pendingFriendInvite) return;
+  if (!cloudUser || !sb) {
+    if (!friendInviteNoticeShown) { friendInviteNoticeShown = true; banner('👥 Prihlás sa cez Google, nech sa pridá priateľ z odkazu.', 3400); }
+    return;   // pendingFriendInvite ostáva čakať - spracuje sa hneď po prihlásení v tejto návšteve
+  }
+  const targetNick = pendingFriendInvite; pendingFriendInvite = null;   // spracuj len raz
+  if (nickKey(targetNick) === nickKey(cloudUser.nick)) return;   // sám so sebou kamarátstvo netreba
+  try {
+    const { data: row, error } = await sb.from('profiles').select('id,nick').ilike('nick', targetNick).single();
+    if (error || !row) { banner('⚠️ Hráč "' + esc(targetNick) + '" z odkazu sa nenašiel.', 3000); return; }
+    const { error: insErr } = await sb.from('friends').insert({ user_id: cloudUser.id, friend_id: row.id });
+    if (insErr) { if (!/duplicate|unique|conflict/i.test(insErr.message || '')) console.warn('Pridanie priateľa zlyhalo:', insErr.message); return; }
+    banner('👥 Pridaný priateľ: ' + row.nick, 3200);
+    if ($('friends').classList.contains('show')) renderFriends();
+  } catch (e) { console.warn('Pridanie priateľa zlyhalo:', e); }
+}
 function grantProfileXp(p, amount) {   // rovnaká logika levelovania ako addXp(), len priamo na uloženom profile (mimo živého zápasu)
   if (!p || p.level >= MAX_LEVEL) return;
   p.xp = (p.xp || 0) + amount;
@@ -2870,7 +2900,7 @@ $('creditsBackBtn').addEventListener('click', () => { hide('credits'); show('hom
 function renderLogin() { $('loginMsg').textContent = loginError || ''; }
 function enterHome() {
   hide('login'); refreshContinue(); renderHome(); show('home');
-  maybeShowTutorial();
+  maybeShowTutorial(); processPendingFriendInvite();
 }
 // ---------- krátky návod pre nových hráčov (zobrazí sa raz automaticky, potom dostupný kedykoľvek cez Nastavenia) ----------
 const TUTORIAL_KEY = 'ironDuelTutorialSeen_v1';
@@ -3005,6 +3035,43 @@ $('perksList').addEventListener('click', e => {
   if (rank >= perk.maxRank || perkPointsAvailable(p) <= 0) return;
   p.perks = p.perks || {}; p.perks[perk.id] = rank + 1;
   saveProfiles(); renderPerks();
+});
+$('homeFriendsBtn').addEventListener('click', () => { hide('home'); renderFriends(); show('friends'); });
+$('friendsBackBtn').addEventListener('click', () => { hide('friends'); show('home'); });
+async function renderFriends() {
+  const summaryEl = $('friendsSummary'), linkWrap = $('friendsLink'), listEl = $('friendsList');
+  if (!cloudUser || !sb) {
+    summaryEl.innerHTML = 'Priatelia fungujú len pre hráčov prihlásených cez Google - potrebujeme spoľahlivo prepojiť dva účty.';
+    linkWrap.style.display = 'none'; listEl.innerHTML = '';
+    return;
+  }
+  const link = location.origin + location.pathname + '?friend=' + encodeURIComponent(cloudUser.nick);
+  summaryEl.innerHTML = 'Pošli tento odkaz kamarátovi. Keď ho otvorí a prihlási sa cez Google, pridáte sa navzájom medzi priateľov.';
+  linkWrap.style.display = ''; $('friendsLinkInput').value = link;
+  listEl.innerHTML = '<p>Načítavam…</p>';
+  try {
+    const { data, error } = await sb.from('friends').select('user_id,friend_id').or('user_id.eq.' + cloudUser.id + ',friend_id.eq.' + cloudUser.id);
+    if (error) throw error;
+    const ids = Array.from(new Set((data || []).map(r => r.user_id === cloudUser.id ? r.friend_id : r.user_id)));
+    if (!ids.length) { listEl.innerHTML = '<p>Zatiaľ nemáš žiadnych priateľov. Zdieľaj svoj odkaz vyššie!</p>'; return; }
+    const { data: profs, error: e2 } = await sb.from('profiles').select('id,nick,color,level,wins,matches').in('id', ids);
+    if (e2) throw e2;
+    const sorted = (profs || []).slice().sort((a, b) => (b.level || 1) - (a.level || 1) || (b.wins || 0) - (a.wins || 0));
+    listEl.innerHTML = sorted.map(p => '<div class="achRow on"><div class="achIcon">👤</div><div class="achBody"><div class="achTitle"><i class="dot" style="background:' + (isColor(p.color) ? p.color : '#888') + '"></i>' + esc(p.nick) + '</div><div class="achDesc">Veliteľská hodnosť LV ' + (p.level || 1) + ' · ' + (p.wins || 0) + ' výhier · ' + (p.matches || 0) + ' zápasov</div></div>' +
+      '<button class="perkBuy" data-unfriend="' + p.id + '" style="background:#3a3f4e;color:#eef2f8">Odobrať</button></div>').join('');
+  } catch (e) { listEl.innerHTML = '<p class="muted">Zoznam priateľov sa nepodarilo načítať (skontroluj internet).</p>'; }
+}
+$('friendsList').addEventListener('click', e => {
+  const btn = e.target.closest('[data-unfriend]'); if (!btn) return;
+  const fid = btn.dataset.unfriend;
+  ask('Odobrať tohto priateľa?', () => {
+    sb.from('friends').delete().or('and(user_id.eq.' + cloudUser.id + ',friend_id.eq.' + fid + '),and(user_id.eq.' + fid + ',friend_id.eq.' + cloudUser.id + ')')
+      .then(({ error }) => { if (error) console.warn('Odobratie priateľa zlyhalo:', error.message); renderFriends(); });
+  });
+});
+$('friendsCopyBtn').addEventListener('click', () => {
+  const inp = $('friendsLinkInput'); inp.select(); inp.setSelectionRange(0, 999);
+  (navigator.clipboard ? navigator.clipboard.writeText(inp.value) : Promise.reject()).then(() => banner('🔗 Odkaz skopírovaný', 1600)).catch(() => { try { document.execCommand('copy'); banner('🔗 Odkaz skopírovaný', 1600); } catch (_) {} });
 });
 $('homeLogoutBtn').addEventListener('click', () => {
   ask('Naozaj sa chceš odhlásiť?', () => {
@@ -3371,11 +3438,11 @@ document.querySelectorAll('.menuBg').forEach(el => {
       const { data: { session } } = await sb.auth.getSession();
       if (session && session.user) {
         const ok = await enterCloudSession(session.user);
-        if (ok) { hide('login'); refreshContinue(); renderHome(); show('home'); maybeShowTutorial(); return; }
+        if (ok) { hide('login'); refreshContinue(); renderHome(); show('home'); maybeShowTutorial(); processPendingFriendInvite(); return; }
       }
     } catch (e) { console.warn('Supabase relácia sa nepodarilo overiť:', e); }
   }
-  if (setup.players[0].nick && getProfile(setup.players[0].nick)) { refreshStoryProgressSource(); hide('login'); renderHome(); show('home'); maybeShowTutorial(); }
+  if (setup.players[0].nick && getProfile(setup.players[0].nick)) { refreshStoryProgressSource(); hide('login'); renderHome(); show('home'); maybeShowTutorial(); processPendingFriendInvite(); }
   else { setup.players[0].nick = null; refreshStoryProgressSource(); renderLogin(); }
 })();
 let last = performance.now(), slowMs = 0;

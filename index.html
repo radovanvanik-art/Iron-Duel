@@ -310,6 +310,7 @@
   #home .card{max-width:680px;text-align:center}
   #home .cockpit{display:grid;grid-template-columns:150px 1fr;gap:16px;align-items:center;margin-top:14px}
   #home .panelGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  #home .panelGrid .panelBtn:last-child:nth-child(odd){grid-column:1/-1}
   #home #homeContBtn{width:100%;margin-top:12px}
 
   #home .radarBtn{position:relative;width:150px;height:150px;border-radius:50%;cursor:pointer;touch-action:manipulation;
@@ -377,6 +378,10 @@
   .achRow .perkBuy{flex:none;background:var(--gold);color:#111;border:0;border-radius:8px;padding:8px 14px;font-weight:800;cursor:pointer;touch-action:manipulation}
   .achRow .perkBuy:disabled{background:#3a3f4e;color:#7a8296;cursor:default}
   #perksSummary b{color:var(--gold)}
+  .friendsLinkRow{display:flex;gap:8px;margin:10px 0 4px}
+  .friendsLinkRow input{flex:1;min-width:0;background:rgba(255,255,255,.06);border:2px solid rgba(255,255,255,.18);border-radius:10px;color:#fff;padding:9px 12px;font-size:12.5px}
+  .friendsLinkRow .btn{flex:none;font-size:13px;padding:9px 14px}
+  #friendsList{max-height:min(50vh,440px);overflow-y:auto;margin-top:10px}
   #achSummary{color:var(--gold);font-weight:700}
   @keyframes rowIn{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:translateX(0)}}
   #homeGreet{color:var(--gold);font-weight:700;margin:-4px 0 4px;text-shadow:0 0 8px rgba(255,213,74,.35)}
@@ -423,6 +428,7 @@
         <button class="panelBtn" id="homeOnlineBtn"><span class="pIcon">📡</span><span class="pLabel">Multiplayer</span></button>
         <button class="panelBtn" id="homeAchBtn"><span class="pIcon">🏅</span><span class="pLabel">Odznaky</span></button>
         <button class="panelBtn" id="homePerksBtn"><span class="pIcon">🎖️</span><span class="pLabel">Vylepšenia</span></button>
+        <button class="panelBtn" id="homeFriendsBtn"><span class="pIcon">👥</span><span class="pLabel">Priatelia</span></button>
       </div>
     </div>
     <button class="btn alt" id="homeContBtn" style="display:none"></button>
@@ -541,6 +547,21 @@
   </div>
 </div>
 
+<div id="friends" class="overlay hub">
+  <div class="menuBg" aria-hidden="true"></div>
+  <div class="card" style="max-width:560px">
+    <div class="logoBadge"><svg><use href="#ironIcon"/></svg></div>
+    <h1>IRON DUEL <span>: TANK COMMANDERS</span></h1>
+    <p id="friendsSummary"></p>
+    <div id="friendsLink" class="friendsLinkRow" style="display:none">
+      <input type="text" readonly id="friendsLinkInput">
+      <button class="btn" id="friendsCopyBtn">📋 Kopírovať</button>
+    </div>
+    <div id="friendsList"></div>
+    <div class="row" style="justify-content:center;margin-top:12px"><button class="btn alt" id="friendsBackBtn">◀ Domov</button></div>
+  </div>
+</div>
+
 <div id="story" class="overlay">
   <div class="card">
     <h2>📖 Príbehový režim</h2>
@@ -638,4 +659,4 @@
     window.__firestoreDb = firebase.firestore();
   } catch (_) { /* mimo web hostingu (napr. Claude Artifact) - použije sa záložné window.claude db */ }
 </script>
-<script src="game.js?v=11"></script>
+<script src="game.js?v=12"></script>

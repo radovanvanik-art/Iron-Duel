@@ -109,3 +109,31 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+
+-- ---------- 2) priatelia (len medzi hráčmi prihlásenými cez Google - prepája dve auth.users id) ----------
+-- jeden riadok = jedno priateľstvo, zapísaný tým, kto pridal (napr. otvorením pozvánkového odkazu druhého hráča),
+-- ale viditeľný a zrušiteľný OBOMA stranami - netreba žiadne schvaľovanie, odkaz dostal len od niekoho, koho pozná
+create table if not exists public.friends (
+  user_id    uuid not null references auth.users(id) on delete cascade,
+  friend_id  uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (user_id, friend_id),
+  constraint friends_not_self check (user_id <> friend_id)
+);
+create index if not exists friends_friend_id_idx on public.friends (friend_id);
+alter table public.friends enable row level security;
+
+drop policy if exists "friends - viditeľné pre obe strany" on public.friends;
+create policy "friends - viditeľné pre obe strany"
+  on public.friends for select
+  using (auth.uid() = user_id or auth.uid() = friend_id);
+
+drop policy if exists "friends - pridanie (len vlastná strana)" on public.friends;
+create policy "friends - pridanie (len vlastná strana)"
+  on public.friends for insert
+  with check (auth.uid() = user_id);
+
+drop policy if exists "friends - odobratie (ktokoľvek z dvojice)" on public.friends;
+create policy "friends - odobratie (ktokoľvek z dvojice)"
+  on public.friends for delete
+  using (auth.uid() = user_id or auth.uid() = friend_id);
