@@ -3715,7 +3715,8 @@ applyGfx();
 genArena(pickBiome()); spawnXs(tanks.length).forEach((x, i) => placeTank(tanks[i], x));
 buildPads(); refreshContinue(); renderSetup();
 document.querySelectorAll('.menuBg').forEach(el => {
-  el.innerHTML = MENU_BG_SVG;   // ručne kreslená panoráma bojiska (vhodnejšia tematicky než starší generický AI podklad) - vždy spoľahlivo dostupná, žiadne čakanie na sieť
+  if (el.closest('#home') || el.closest('#login')) return;   // tieto majú skutočnú AI fotku kokpitu z Hugging Face (CSS background-image), nie kreslenú panorámu
+  el.innerHTML = MENU_BG_SVG;   // ručne kreslená panoráma bojiska - zvyšné obrazovky (nastavenia, kredity, výber zápasu...)
   el.appendChild(menuFleetEl());   // tmavá "kolóna" AI tankov pozdĺž spodku obrazovky - dekorácia z vygenerovaných spritov
 });
 function menuFleetEl() {   // zakaždým trochu iné rozostavenie tankov, nech obrazovka pôsobí živo
