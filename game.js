@@ -992,11 +992,18 @@ const WORLD_LIGHT = {
   mars:  { dx: .52, dy: .28, dz: .81, ambient: .14, term: .16, atmo: 'rgba(224,150,96,.26)', atmoR: 1.2, sheen: .07, rim: .4, rimCol: '40,14,4' },
   venus: { dx: .5, dy: .3, dz: .8, ambient: .5, term: .7, atmo: 'rgba(232,184,74,.55)', atmoR: 1.42, sheen: .04, rim: .25, rimCol: '60,30,0' },   // hustý mrak rozptyľuje svetlo takmer rovnomerne - vysoký ambient, veľmi mäkký/široký terminátor
 };
-// reálna AI-generovaná textúra Zeme (plochá mapa sveta) pre glóbus kampane - vzorkuje sa podľa lat/lon namiesto procedurálneho farbenia;
+// reálne AI-generované textúry (Hugging Face) pre glóbus kampane - vzorkujú sa podľa lat/lon namiesto procedurálneho farbenia;
+// Zem = skutočná plochá mapa sveta, ostatné planéty = bezšvová (tileable) fotografia povrchu "z vtáčej perspektívy" (model FLUX.1-schnell odmieta kresliť
+// Mesiac/Mars/Venušu ako plochú mapu, vždy ich vykreslí ako guľu - preto sa tu použila téma "seamless texture" miesto "planet map", ktorá spoľahlivo vyjde plocho).
 // ak sa obrázok nenačíta (pomalé pripojenie, chýbajúci súbor a pod.), globeCellColor ticho ostane na procedurálnom farbení ako predtým
-const PLANET_TEX = { earth: { img: new Image(), loaded: false, data: null, w: 0, h: 0 } };
-(function () {
-  const t = PLANET_TEX.earth;
+const PLANET_TEX = {
+  earth: { img: new Image(), loaded: false, data: null, w: 0, h: 0, src: 'assets/planets/earth.png' },
+  moon:  { img: new Image(), loaded: false, data: null, w: 0, h: 0, src: 'assets/planets/moon.jpg' },
+  mars:  { img: new Image(), loaded: false, data: null, w: 0, h: 0, src: 'assets/planets/mars.jpg' },
+  venus: { img: new Image(), loaded: false, data: null, w: 0, h: 0, src: 'assets/planets/venus.jpg' },
+};
+Object.keys(PLANET_TEX).forEach(world => {
+  const t = PLANET_TEX[world];
   t.img.onload = () => {
     try {
       const c = document.createElement('canvas'); c.width = t.img.naturalWidth; c.height = t.img.naturalHeight;
@@ -1005,9 +1012,9 @@ const PLANET_TEX = { earth: { img: new Image(), loaded: false, data: null, w: 0,
       GLOBE_CELL_CACHE.clear();   // ak sa textúra načíta až po prvom vykreslení glóbusu, vynúti prekreslenie s reálnymi farbami
     } catch (e) { /* CORS/canvas chyba pri čítaní pixelov - ticho ostane procedurálne */ }
   };
-  t.img.src = 'assets/planets/earth.png';
-})();
-function planetTexColor(world, latDeg, lonDeg) {   // RGB pole z reálnej textúry na danej planéte, alebo null ak nie je k dispozícii (zatiaľ len Zem)
+  t.img.src = t.src;
+});
+function planetTexColor(world, latDeg, lonDeg) {   // RGB pole z reálnej textúry na danej planéte, alebo null ak sa ešte nenačítala
   const t = PLANET_TEX[world]; if (!t || !t.loaded) return null;
   const u = ((lonDeg + 180) / 360 % 1 + 1) % 1, v = Math.max(0, Math.min(1, (90 - latDeg) / 180));
   const px = Math.min(t.w - 1, Math.max(0, Math.floor(u * t.w)));
@@ -1184,11 +1191,11 @@ function drawGlobe() {
       if (avgZ < -.04) continue;
       const avgX = (corners[0].x + corners[1].x + corners[2].x + corners[3].x) / 4;
       const avgY = (corners[0].y + corners[1].y + corners[2].y + corners[3].y) / 4;
-      const texRGB = GLOBE.world === 'earth' ? planetTexColor('earth', la, lo) : null;
+      const texRGB = planetTexColor(GLOBE.world, la, lo);
       let col;
       if (texRGB) {
         col = texRGB;
-        if (Math.abs(la) > 78) {   // textúra spoľahlivo nepokrýva samotné póly - preleješ ich ľadovou čiapkou ako predtým
+        if (GLOBE.world === 'earth' && Math.abs(la) > 78) {   // textúra spoľahlivo nepokrýva samotné póly - preleješ ich ľadovou čiapkou ako predtým
           const n = fbm2(la / 3, lo / 3, 3), icy = n > .5 ? [238, 246, 255] : [220, 235, 251];
           const m = Math.min(1, (Math.abs(la) - 78) / 10);
           col = [col[0] * (1 - m) + icy[0] * m, col[1] * (1 - m) + icy[1] * m, col[2] * (1 - m) + icy[2] * m];
