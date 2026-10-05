@@ -992,9 +992,36 @@ const WORLD_LIGHT = {
   mars:  { dx: .52, dy: .28, dz: .81, ambient: .14, term: .16, atmo: 'rgba(224,150,96,.26)', atmoR: 1.2, sheen: .07, rim: .4, rimCol: '40,14,4' },
   venus: { dx: .5, dy: .3, dz: .8, ambient: .5, term: .7, atmo: 'rgba(232,184,74,.55)', atmoR: 1.42, sheen: .04, rim: .25, rimCol: '60,30,0' },   // hustý mrak rozptyľuje svetlo takmer rovnomerne - vysoký ambient, veľmi mäkký/široký terminátor
 };
+// reálna AI-generovaná textúra Zeme (plochá mapa sveta) pre glóbus kampane - vzorkuje sa podľa lat/lon namiesto procedurálneho farbenia;
+// ak sa obrázok nenačíta (pomalé pripojenie, chýbajúci súbor a pod.), globeCellColor ticho ostane na procedurálnom farbení ako predtým
+const PLANET_TEX = { earth: { img: new Image(), loaded: false, data: null, w: 0, h: 0 } };
+(function () {
+  const t = PLANET_TEX.earth;
+  t.img.onload = () => {
+    try {
+      const c = document.createElement('canvas'); c.width = t.img.naturalWidth; c.height = t.img.naturalHeight;
+      const cx2 = c.getContext('2d'); cx2.drawImage(t.img, 0, 0);
+      t.data = cx2.getImageData(0, 0, c.width, c.height).data; t.w = c.width; t.h = c.height; t.loaded = true;
+      GLOBE_CELL_CACHE.clear();   // ak sa textúra načíta až po prvom vykreslení glóbusu, vynúti prekreslenie s reálnymi farbami
+    } catch (e) { /* CORS/canvas chyba pri čítaní pixelov - ticho ostane procedurálne */ }
+  };
+  t.img.src = 'assets/planets/earth.png';
+})();
+function planetTexColor(world, latDeg, lonDeg) {   // RGB pole z reálnej textúry na danej planéte, alebo null ak nie je k dispozícii (zatiaľ len Zem)
+  const t = PLANET_TEX[world]; if (!t || !t.loaded) return null;
+  const u = ((lonDeg + 180) / 360 % 1 + 1) % 1, v = Math.max(0, Math.min(1, (90 - latDeg) / 180));
+  const px = Math.min(t.w - 1, Math.max(0, Math.floor(u * t.w)));
+  const py = Math.min(t.h - 1, Math.max(0, Math.floor(v * t.h)));
+  const i = (py * t.w + px) * 4;
+  return [t.data[i], t.data[i + 1], t.data[i + 2]];
+}
 function globeBump(latDeg, lonDeg) {   // pseudonáhodné "krátery"/hrbole pre Mesiac a Mars - mimo zemského biómového tieňovania
-  const n = hash2(Math.round(latDeg * 1.7) + 11, Math.round(lonDeg * 1.7) + 29);
-  return n > .88 ? -.38 : n > .8 ? .22 : 0;   // tmavé dno krátera, svetlý okraj, inak bez zmeny
+  // dve mierky kráterov (veľké riedke + malé husté) namiesto jednej - povrch pôsobí hustejšie posiaty a menej "dierovaný"
+  const big = hash2(Math.round(latDeg * 1.7) + 11, Math.round(lonDeg * 1.7) + 29);
+  const small = hash2(Math.round(latDeg * 4.3) - 7, Math.round(lonDeg * 4.3) + 61);
+  let bump = big > .88 ? -.4 : big > .81 ? .24 : 0;
+  if (small > .9) bump += small > .96 ? -.22 : .14;   // jemnejšie drobné krátery navrch
+  return bump;
 }
 // kontinenty podľa biómu (osobitne pre každú planétu kampane), nech sú misie rovnakého terénu zoskupené na vlastnej časti glóbusu
 const GLOBE_ANCHORS_BY_WORLD = {
@@ -1015,6 +1042,11 @@ const GLOBE_ANCHORS_BY_WORLD = {
   venus: { venus: { lat: 10, lon: 0, r: 200 } },
 };
 function hash2(a, b) { const s = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453; return s - Math.floor(s); }
+function fbm2(a, b, oct) {   // niekoľko vrstiev hash2 šumu na rôznej mierke spolu ("fractal brownian motion") - oveľa organickejšie/detailnejšie tvary (pobrežia, krátery, terén) než jediný hash
+  let v = 0, amp = 0.5, freq = 1, norm = 0;
+  for (let i = 0; i < oct; i++) { v += amp * hash2(a * freq + i * 101, b * freq - i * 57); norm += amp; amp *= 0.5; freq *= 2.17; }
+  return v / norm;
+}
 function sphericalOffset(latDeg, lonDeg, bearingDeg, distDeg) {   // bod vo zvolenej vzdialenosti/smere od kotvy (veľkokruh)
   const lat0 = latDeg * Math.PI / 180, lon0 = lonDeg * Math.PI / 180, br = bearingDeg * Math.PI / 180, d = distDeg * Math.PI / 180;
   const lat = Math.asin(Math.sin(lat0) * Math.cos(d) + Math.cos(lat0) * Math.sin(d) * Math.cos(br));
@@ -1089,7 +1121,7 @@ function globeTerrainAt(latDeg, lonDeg) {   // ktorý biómový "kontinent" (ak 
     const a = anchors[key];
     let dLon = Math.abs(lonDeg - a.lon); if (dLon > 180) dLon = 360 - dLon;
     const dLat = latDeg - a.lat, ang = Math.sqrt(dLat * dLat + dLon * dLon * Math.pow(Math.cos(latDeg * Math.PI / 180), 2));
-    const jag = 0.78 + 0.4 * hash2(Math.round(latDeg / 6), Math.round(lonDeg / 6));
+    const jag = 0.74 + 0.5 * fbm2(latDeg / 6, lonDeg / 6, 3);   // 3 vrstvy šumu namiesto jednej - menej "kruhové" kontinenty, viac fraktálových zálivov/polostrovov
     const ratio = ang / (a.r * jag);
     if (ratio < bestRatio) { bestRatio = ratio; best = key; }
   }
@@ -1100,16 +1132,25 @@ function globeCellColor(latDeg, lonDeg) {
   const ck = Math.round(latDeg) + ',' + Math.round(lonDeg);
   if (GLOBE_CELL_CACHE.has(ck)) return GLOBE_CELL_CACHE.get(ck);
   const key = globeTerrainAt(latDeg, lonDeg);
-  const n = hash2(Math.round(latDeg / 3), Math.round(lonDeg / 3));
+  const n = fbm2(latDeg / 3, lonDeg / 3, 3);   // 3-vrstvový šum namiesto jedného hash-u - terén pôsobí zrnitejšie/detailnejšie, menej "flekaté"
   let col;
   if (key) {
     const g = BIOMES[key].ground;
     col = n > .66 ? g[0] : n > .33 ? g[1] : g[2];
   } else {
-    const depth = .35 + .5 * hash2(Math.round(latDeg / 5) + 50, Math.round(lonDeg / 5) + 50);
+    const depth = .35 + .5 * fbm2(latDeg / 5 + 50, lonDeg / 5 + 50, 2);
     col = depth > .6 ? '#123a68' : depth > .35 ? '#0c2a50' : '#081c38';
   }
   if (GLOBE.world === 'earth' && Math.abs(latDeg) > 80) col = n > .5 ? '#eef6ff' : '#dcebfb';   // trvalé ľadové čiapky na póloch (len Zem)
+  if (GLOBE.world === 'mars' && Math.abs(latDeg) > 68) {   // polárne čiapky zo suchého ľadu (len Mars) - svetlejšie a menej ostro ohraničené než zemské
+    const capN = fbm2(latDeg / 4 + 200, lonDeg / 4 + 200, 2), edge = (Math.abs(latDeg) - 68) / 22 + capN * .4 - .2;
+    if (edge > .15) col = capN > .5 ? '#fdeee0' : '#f0d8c4';
+  }
+  if (GLOBE.world === 'venus') {   // husté prúdiace mraky v pásoch podľa šírky (super-rotujúca atmosféra) namiesto jednoliatej farby
+    const band = Math.sin(latDeg * Math.PI / 180 * 5 + fbm2(lonDeg / 10, 0, 2) * 3) * .5 + .5;
+    const g = BIOMES.venus.ground, mix = Math.max(0, Math.min(1, band * .6 + n * .4));
+    col = mix > .66 ? g[0] : mix > .33 ? g[1] : g[2];
+  }
   GLOBE_CELL_CACHE.set(ck, col);
   return col;
 }
@@ -1128,7 +1169,7 @@ function drawGlobe() {
   ctx.save();   // orezanie na kruh gule, nech sú rohy políčok terénu čisté
   ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.clip();
   ctx.fillStyle = '#081634'; ctx.fillRect(cx - R, cy - R, R * 2, R * 2);
-  const latStep = 7;
+  const latStep = quality >= 2 ? 5 : quality === 1 ? 7 : 9;   // jemnejšie políčka pri vyššej kvalite grafiky (detailnejšia guľa), hrubšie na slabších zariadeniach kvôli výkonu
   for (let la = -90 + latStep / 2; la < 90; la += latStep) {
     const lonN = Math.max(10, Math.round(46 * Math.cos(la * Math.PI / 180)));
     const lonStep = 360 / lonN;
@@ -1143,7 +1184,18 @@ function drawGlobe() {
       if (avgZ < -.04) continue;
       const avgX = (corners[0].x + corners[1].x + corners[2].x + corners[3].x) / 4;
       const avgY = (corners[0].y + corners[1].y + corners[2].y + corners[3].y) / 4;
-      const col = hex2rgb(globeCellColor(la, lo));
+      const texRGB = GLOBE.world === 'earth' ? planetTexColor('earth', la, lo) : null;
+      let col;
+      if (texRGB) {
+        col = texRGB;
+        if (Math.abs(la) > 78) {   // textúra spoľahlivo nepokrýva samotné póly - preleješ ich ľadovou čiapkou ako predtým
+          const n = fbm2(la / 3, lo / 3, 3), icy = n > .5 ? [238, 246, 255] : [220, 235, 251];
+          const m = Math.min(1, (Math.abs(la) - 78) / 10);
+          col = [col[0] * (1 - m) + icy[0] * m, col[1] * (1 - m) + icy[1] * m, col[2] * (1 - m) + icy[2] * m];
+        }
+      } else {
+        col = hex2rgb(globeCellColor(la, lo));
+      }
       // osvetlenie podľa pevného smeru "slnka" (nie podľa kamery) - pri rotácii gule po nej putuje hranica dňa a noci
       const ndotl = avgX * WL.dx + avgY * WL.dy + avgZ * WL.dz;
       let t = Math.max(0, Math.min(1, (ndotl + WL.term) / (2 * WL.term))); t = t * t * (3 - 2 * t);
@@ -1631,7 +1683,7 @@ function groundAvg(x) { return (gy(x - 18) + gy(x + 18)) / 2; }
 function tiltAt(x) { return Math.atan2(gy(x + 18) - gy(x - 18), 36); }
 function pivot(t) { const h = t.artPivotH || 22; return { x: t.x + h * Math.sin(t.tilt), y: t.y - h * Math.cos(t.tilt) }; }
 function muzzle(t) {
-  const p = pivot(t), a = t.ang * Math.PI / 180, art = tankArt[TANK_COLOR_NAME[t.color]];
+  const p = pivot(t), a = t.ang * Math.PI / 180, art = tankArt[TANK_COLOR_NAME[String(t.color).toLowerCase()]];
   const L = 36 * ((art && art.loaded) ? TANK_TARGET_W / 76 : 1);
   return { x: p.x + Math.cos(a) * L, y: p.y - Math.sin(a) * L, dx: Math.cos(a), dy: -Math.sin(a) };
 }
@@ -2618,7 +2670,7 @@ const TANK_ART_META = {
 const TANK_TARGET_W = 130;   // cieľová šírka trupu na obrazovke (px); zväčšené z 76, nech je detailnejší realistický sprite čitateľný
 function tankArtScale(colorName) { const m = TANK_ART_META[colorName]; return m ? TANK_TARGET_W / m.hullW : 0; }
 function tankArtPivotH(colorHex) {
-  const name = TANK_COLOR_NAME[colorHex], m = TANK_ART_META[name];
+  const name = TANK_COLOR_NAME[String(colorHex).toLowerCase()], m = TANK_ART_META[name];
   return m ? m.hullH * tankArtScale(name) : 22;
 }
 const tankArt = {};
@@ -2675,7 +2727,7 @@ function tankSprite(color, dead) {   // trup tanku sa vykreslí raz pre každú 
 }
 function drawTank(t) {
   const dead = t.dead;
-  const art = tankArt[TANK_COLOR_NAME[t.color]];
+  const art = tankArt[TANK_COLOR_NAME[String(t.color).toLowerCase()]];
   const useArt = art && art.loaded;
   ctx.save(); ctx.translate(t.x, t.y + 1); ctx.rotate(t.tilt);
   ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(0, 2, 31, 4.5, 0, 0, 6.3); ctx.fill();   // tieň
@@ -3663,10 +3715,7 @@ applyGfx();
 genArena(pickBiome()); spawnXs(tanks.length).forEach((x, i) => placeTank(tanks[i], x));
 buildPads(); refreshContinue(); renderSetup();
 document.querySelectorAll('.menuBg').forEach(el => {
-  const img = new Image();
-  img.onload = () => { el.style.backgroundImage = "url('assets/menu-bg.jpg')"; };
-  img.onerror = () => { el.innerHTML = MENU_BG_SVG; };   // AI podklad sa nenačítal - záložné ručné SVG pozadie
-  img.src = 'assets/menu-bg.jpg';
+  el.innerHTML = MENU_BG_SVG;   // ručne kreslená panoráma bojiska (vhodnejšia tematicky než starší generický AI podklad) - vždy spoľahlivo dostupná, žiadne čakanie na sieť
   el.appendChild(menuFleetEl());   // tmavá "kolóna" AI tankov pozdĺž spodku obrazovky - dekorácia z vygenerovaných spritov
 });
 function menuFleetEl() {   // zakaždým trochu iné rozostavenie tankov, nech obrazovka pôsobí živo
