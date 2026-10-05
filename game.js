@@ -1457,6 +1457,7 @@ function syncPassiveUI() {   // pasívne zariadenie: prekresli obrazovky podľa 
     $('endTitle').textContent = w.name + ' vyhráva zápas!'; $('endTitle').style.color = w.color;
     $('endSub').innerHTML = 'Zápas skončil.';
     $('endNormalBtns').style.display = ''; $('endStoryBtns').style.display = 'none';
+    $('end').classList.remove('win', 'lose');   // pasívne zariadenie v multiplayeri - generická bitevná scéna
     show('end');
   } else { hide('shop'); hide('end'); }
 }
@@ -2012,6 +2013,7 @@ function afterRoundEnd() {
       $('endSub').innerHTML = esc(won ? m.win : m.lose);
       $('endNormalBtns').style.display = 'none'; $('endStoryBtns').style.display = 'flex';
       $('storyNextBtn').style.display = (won && STORY_MISSIONS[story.idx + 1]) ? '' : 'none';
+      $('end').classList.toggle('win', won); $('end').classList.toggle('lose', !won);   // samostatné AI fotky pozadia pre víťazstvo/prehru misie (inak generická bitevná scéna)
       show('end'); if (net.active) netPublish();
       if (worldReward) showGeneralDialog(worldReward, 'outro');
       return;
@@ -2023,6 +2025,7 @@ function afterRoundEnd() {
     $('endSub').innerHTML = 'Konečné poradie po ' + round + ' kolách<br>' + rank.map((t, i) =>
       (['🥇', '🥈', '🥉', '4.'][i]) + ' <span style="color:' + t.color + '">' + esc(t.name) + '</span> · ★' + t.wins + ' · LV ' + t.level + ' · €' + t.money + ' · brnenie L' + t.armorLvl).join('<br>') +
       (saved.length ? '<br><small>Štatistiky uložené pre: ' + saved.map(esc).join(', ') + '</small>' : '');
+    $('end').classList.remove('win', 'lose');   // viacerí hráči na jednej obrazovke - žiadne osobné víťazstvo/prehra, generická bitevná scéna
     show('end');
     if (net.active) netPublish();
   } else { round++; enterShop(); }

@@ -70,6 +70,8 @@
 
   .overlay{position:fixed;inset:0;display:none;z-index:10;background:rgba(5,8,14,.72);padding:12px;overflow:auto;overscroll-behavior:contain}
   #end{background:rgba(5,8,14,.55) url('assets/end-bg.jpg') center/cover}
+  #end.win{background:rgba(5,8,14,.45) url('assets/end-bg-win.jpg') center/cover}   /* víťazstvo misie v kampani - samostatná AI fotka (triumfálny východ slnka) */
+  #end.lose{background:rgba(5,8,14,.6) url('assets/end-bg-lose.jpg') center/cover}   /* prehra misie v kampani - samostatná AI fotka (zničený tank) */
   #end .card{background:rgba(10,14,24,.72);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);border:1px solid rgba(255,255,255,.14)}
   .overlay.show{display:flex}
   .card{margin:auto;background:linear-gradient(175deg,rgba(26,32,50,.95),var(--panel) 55%);border:1px solid rgba(255,255,255,.14);border-radius:18px;padding:22px 26px;max-width:920px;width:100%;box-shadow:0 24px 60px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.04) inset,0 1px 0 rgba(255,255,255,.07) inset}
@@ -779,4 +781,4 @@
     window.__firestoreDb = firebase.firestore();
   } catch (_) { /* mimo web hostingu (napr. Claude Artifact) - použije sa záložné window.claude db */ }
 </script>
-<script src="game.js?v=27"></script>
+<script src="game.js?v=28"></script>
