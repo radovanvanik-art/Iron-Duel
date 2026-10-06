@@ -377,6 +377,7 @@ function cloudProfileRowToLocal(row) {
     story: { unlocked: clampInt(row.story_unlocked, 1, STORY_MISSIONS.length, 1), done: Array.isArray(row.story_done) ? row.story_done.map(Boolean) : [] },
     achievements: Array.isArray(row.achievements) ? row.achievements.slice() : [],
     perks: row.perks && typeof row.perks === 'object' && !Array.isArray(row.perks) ? Object.assign({}, row.perks) : {},
+    dungeon: row.dungeon_best > 1 ? { floor: row.dungeon_best, best: row.dungeon_best } : null,
   };
 }
 async function cloudFetchProfile(userId) {
@@ -393,13 +394,14 @@ function cloudPush() {   // write-through: po uložení lokálneho profilu potic
     story_loadout: p.storyLoadout, story_unlocked: p.story ? p.story.unlocked : 1, story_done: p.story ? p.story.done : [],
     achievements: Array.isArray(p.achievements) ? p.achievements : [],
     perks: p.perks && typeof p.perks === 'object' ? p.perks : {},
+    dungeon_best: p.dungeon ? Math.max(1, p.dungeon.best | 0) : 1,
   };
   sb.from('profiles').update(payload).eq('id', cloudUser.id).then(({ error }) => {
     if (!error) return;
     console.warn('Supabase sync zlyhal:', error.message);
     if (/perks/i.test(error.message || '') || /column/i.test(error.message || '')) {
       // stĺpec "perks" ešte nie je v databáze (SQL skript sa ešte nespustil) - skús to znova bez neho, nech sa aspoň ostatné štatistiky nestratia
-      const fallback = Object.assign({}, payload); delete fallback.perks;
+      const fallback = Object.assign({}, payload); delete fallback.perks; delete fallback.dungeon_best;
       sb.from('profiles').update(fallback).eq('id', cloudUser.id).then(({ error: e2 }) => { if (e2) console.warn('Supabase sync (fallback) zlyhal:', e2.message); });
     }
   });
@@ -432,6 +434,9 @@ async function enterCloudSession(user) {   // zavolá sa po úspešnom Google pr
     profiles[key] = cloudProfileRowToLocal(row);
     if (prevP && prevP.daily) profiles[key].daily = prevP.daily;
     if (prevP && prevP.weekly) profiles[key].weekly = prevP.weekly;
+    if (prevP && prevP.dungeonMods) profiles[key].dungeonMods = prevP.dungeonMods;   // počítadlá odznakov Dungeonu a priepasti sú len lokálne
+    if (prevP && prevP.abyss) profiles[key].abyss = prevP.abyss;
+    if (prevP && prevP.dungeon && (!profiles[key].dungeon || prevP.dungeon.best > profiles[key].dungeon.best)) profiles[key].dungeon = prevP.dungeon;   // postup v Dungeone: platí lepší z cloudu a lokálneho
     cloudUser = { id: user.id, nick: row.nick };
   }
   setup.players[0].nick = row.nick; setup.players[0].name = row.nick;
@@ -1110,6 +1115,7 @@ function worldUnlocked(w) { const wm = worldMissions(w); return !wm.length || wm
 function profileWorldUnlocked(prof, w) { const wm = worldMissions(w); return !wm.length || wm[0].i < (prof.story ? prof.story.unlocked : 1); }   // rovnaké ako worldUnlocked(), ale pre ľubovoľný profil (nielen aktuálne zobrazenú kampaň)
 
 // ---------- odznaky (achievementy) - uložené v profile (profiles[key].achievements), zrkadlené aj do Supabase ako pri zvyšku profilu ----------
+const modN = (p, kind, id) => ((p.dungeonMods || {})[kind] || {})[id] || 0;   // počítadlá modifikátorov Dungeonu v profile: cleared/flawless podľa id modifikátora
 const ACHIEVEMENTS = [
   { id: 'prve_vitazstvo', icon: '🥇', title: 'Prvé víťazstvo', desc: 'Vyhraj svoj prvý zápas.', check: p => p.wins >= 1 },
   { id: 'desiatka', icon: '🏅', title: 'Desiatka', desc: 'Vyhraj 10 zápasov.', check: p => p.wins >= 10 },
@@ -1125,6 +1131,13 @@ const ACHIEVEMENTS = [
   { id: 'cela_kampan', icon: '🏆', title: 'Veliteľ slnečnej sústavy', desc: 'Dokonči celú kampaň - Zem, Mesiac, Mars aj Venušu.', check: p => !!p.story && p.story.unlocked >= STORY_MISSIONS.length },
   { id: 'vytrvalec', icon: '⏱️', title: 'Vytrvalec', desc: 'Odohraj 150 kôl.', check: p => p.rounds >= 150 },
   { id: 'dungeon_5', icon: '🕯️', title: 'Prieskumník dungeonu', desc: 'Dosiahni 5. poschodie Dungeonu.', check: p => !!p.dungeon && p.dungeon.best >= 5 },
+  { id: 'mod_dark', icon: '🌑', title: 'Nočný duch', desc: 'Vyčisti poschodie s modifikátorom Tma bez straty životov.', check: p => modN(p, 'flawless', 'dark') >= 1 },
+  { id: 'mod_storm', icon: '🌪️', title: 'Pán búrky', desc: 'Vyčisti poschodie s modifikátorom Búrka v šachte bez straty životov.', check: p => modN(p, 'flawless', 'storm') >= 1 },
+  { id: 'mod_rockfall', icon: '🪨', title: 'Tvrdá hlava', desc: 'Vyčisti 3 poschodia s modifikátorom Padajúce kamene.', check: p => modN(p, 'cleared', 'rockfall') >= 3 },
+  { id: 'mod_all', icon: '🎯', title: 'Majster modifikátorov', desc: 'Vyčisti aspoň jedno poschodie s každým z 6 modifikátorov.', check: p => Object.keys(DUNGEON_MODS).every(id => modN(p, 'cleared', id) >= 1) },
+  { id: 'mod_flawless5', icon: '💎', title: 'Nedotknuteľný', desc: 'Vyčisti 5 poschodí s modifikátorom bez straty životov.', check: p => Object.keys(DUNGEON_MODS).reduce((a, id) => a + modN(p, 'flawless', id), 0) >= 5 },
+  { id: 'hrobar', icon: '🕳️', title: 'Hrobár', desc: 'Zhoď súpera do priepasti.', check: p => (p.abyss || 0) >= 1 },
+  { id: 'hrobar5', icon: '⚰️', title: 'Pohrebný ústav', desc: 'Zhoď do priepasti 5 súperov.', check: p => (p.abyss || 0) >= 5 },
   { id: 'dungeon_boss1', icon: '👹', title: 'Lovec bossov', desc: 'Zraz obra na 5. poschodí Dungeonu. Odmena: farba tanku Obsidián.', check: p => !!p.dungeon && p.dungeon.best >= 6 },
   { id: 'dungeon_boss2', icon: '🔱', title: 'Zlomiteľ trojice', desc: 'Zraz trojicu spojených tankov na 10. poschodí. Odmena: farba tanku Magma.', check: p => !!p.dungeon && p.dungeon.best >= 11 },
   { id: 'dungeon_boss3', icon: '👑', title: 'Pán hlbín', desc: 'Zraz bossa na 15. poschodí Dungeonu. Odmena: farba tanku Platina.', check: p => !!p.dungeon && p.dungeon.best >= 16 },
@@ -1653,7 +1666,6 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const gy = x => ground[clamp(Math.round(x), 0, WORLD_W)];
 // priepasť: terén sa dá vykopať aj pod spodný okraj arény (H) a tank, ktorý tam spadne, je zničený (pozri swallowed)
 const ABYSS = 220;
-let lastDigger = -1;   // kto naposledy vykopal kráter - jemu sa pripíše zničenie tanku, ktorý spadol do hlbín
 
 // ---------- zvuk ----------
 let actx = null;
@@ -1772,7 +1784,7 @@ function placeTank(t, x) {
   if (t.boss) x = clamp(x, tankHW(t) + 20, WORLD_W - tankHW(t) - 20);   // široký boss sa nesmie vyliezť mimo mapy
   t.x = x; t.y = groundAvg(x, tankSpan(t)); t.tilt = tiltAt(x, tankSpan(t));
   t.face = x < WORLD_W / 2 ? 1 : -1; t.ang = t.face > 0 ? 50 : 130;
-  t.dead = false; t.cd = 0; t.emp = 0; t.stun = false; t.fired = false; t.sel = 'ap';
+  t.dead = false; t.sinkWarn = false; t.sinkTurns = 0; t.cd = 0; t.emp = 0; t.stun = false; t.fired = false; t.sel = 'ap';
 }
 function groundAvg(x, r = 18) { return (gy(x - r) + gy(x + r)) / 2; }
 function tiltAt(x, r = 18) { return Math.atan2(gy(x + r) - gy(x - r), 2 * r); }
@@ -2054,6 +2066,7 @@ function beginTurn(i) {
 }
 function nextTurn() {
   const n = tanks.length;
+  const cur = tanks[turnIdx]; if (cur && cur.sinkWarn && !cur.dead) cur.sinkTurns = (cur.sinkTurns || 0) + 1;   // prepadnutý tank práve dohral svoj posledný ťah
   for (let k = 1; k <= n; k++) {
     const j = (turnIdx + k) % n;
     if (!tanks[j].dead) { beginTurn(j); if (net.active) netPublish(); return; }
@@ -2203,6 +2216,11 @@ function afterRoundEnd() {
         dungeon.progress.best = Math.max(dungeon.progress.best, dungeon.progress.floor);
         saveDungeonProgress();
       }
+      if (won && profMe && dungeon.mod) {   // počítadlá pre odznaky za modifikátory ("bez straty životov" = hráčov tank je na plných životoch)
+        const dm = profMe.dungeonMods || (profMe.dungeonMods = { cleared: {}, flawless: {} }), id = dungeon.mod.id;
+        dm.cleared[id] = (dm.cleared[id] || 0) + 1;
+        if (me && !me.dead && me.hp >= maxHp(me)) dm.flawless[id] = (dm.flawless[id] || 0) + 1;
+      }
       recordStats(won ? tanks.find(t => t.team === 0) : undefined);   // postup/odznaky Dungeonu sa počítajú do profilu rovnako ako kampaň
       if (won) {   // nové odznaky a odomknuté farby tanku z tohto poschodia
         const achNow = new Set(profMe && profMe.achievements || []);
@@ -2347,7 +2365,7 @@ function fireLaser(t, m) {
   let x = m.x, y = m.y, hit = false;
   for (let i = 0; i < 1800; i++) {
     x += m.dx * 2; y += m.dy * 2;
-    if (x < 0 || x > WORLD_W || y > H || y < -300) break;
+    if (x < 0 || x > WORLD_W || y > H + ABYSS + 260 || y < -300) break;
     if (y >= gy(x)) { carve(x, y, AMMO.laser.crater * biome().crater); hit = true; break; }
     const e = tanks.find(o => o !== t && !o.dead && inTank(o, x, y));
     if (e) { damage(e, AMMO.laser.dmg * dmgMul(t, 'laser'), t.id, x, y, true); hit = true; break; }
@@ -2402,7 +2420,8 @@ function explosion(x, y, type, ownerId) {
   if (a.dirt) { addDirt(x, y, a.dirt); for (let i = 0; i < 24; i++) spark(x, y, rand(-140, 140), rand(-220, -30), '#b58a5a', rand(0.4, 0.9), rand(3, 7)); noise(0.3, 0.2, 500); return; }
   if (a.tele) { teleportTank(ownerId, x); return; }
   if (a.strike) { strikes.push({ x, t: 1.3, n: a.strike, owner: ownerId }); tone(900, 300, 0.3, 'square', 0.05); return; }
-  lastDigger = ownerId;
+  const digR = a.crater * biome().crater;
+  tanks.forEach(o => { if (!o.dead && o.id !== ownerId && Math.abs(o.x - x) < digR + tankHW(o)) o.lastDugBy = ownerId; });   // komu pripísať zničenie, ak tank spadne do priepasti
   carve(x, y, a.crater * biome().crater);
   scorch(x, y, Math.max(20, a.crater * biome().crater * 1.6));
   if (a.crater >= 35 && owner) reward(owner, Math.round(a.crater / 8), 'terrain');   // veľký kráter = malý bonus za pretvarovanie terénu
@@ -2541,10 +2560,17 @@ function updateTank(t, dt) {
   if (t.boss) obstacles.slice().forEach(o => { if (t.x + tankHW(t) > o.x && t.x - tankHW(t) < o.x + o.w && obTop(o) < t.y - 4) destroyObstacle(o, t.id); });
   const g = groundAvg(t.x, span);
   if (t.y < g) t.y = Math.min(g, t.y + 420 * dt); else t.y = Math.max(g, t.y - 320 * dt);
-  if (state === 'play' && swallowed(t)) {
-    floatText(t.x, H - 60, '⚠ Prepadol sa do hlbín!', '#ff9a3c'); noise(0.6, 0.4, 250);
-    killTank(t, lastDigger !== t.id ? lastDigger : -1); return;
-  }
+  if (state === 'play' && swallowed(t)) {   // ochrana: prepadnutý tank dostane ešte jeden vlastný ťah (strieľať z priepasti sa dá), až po ňom padne do hlbín
+    if (!t.sinkWarn) { t.sinkWarn = true; t.sinkTurns = 0; banner('⚠ ' + t.name + ' sa prepadá do hlbín! Posledný ťah na pomstu alebo záchranu', 2800); noise(0.4, 0.3, 250); }
+    else if (t.sinkTurns >= 1) {
+      floatText(t.x, H - 60, '⚠ Prepadol sa do hlbín!', '#ff9a3c'); noise(0.6, 0.4, 250);
+      const dg = t.lastDugBy != null && t.lastDugBy !== t.id ? t.lastDugBy : -1;
+      killTank(t, dg);
+      const dk = tanks[dg], dp = dk && dk.nick ? profiles[nickKey(dk.nick)] : null;   // odznak "Hrobár" - počíta sa zhodenie súpera do priepasti
+      if (dp) { dp.abyss = (dp.abyss || 0) + 1; saveProfiles(); checkAchievements(dk.nick); }
+      return;
+    }
+  } else if (t.sinkWarn && state === 'play') { t.sinkWarn = false; floatText(t.x, t.y - 60, 'Zachránený!', '#6bffb0'); }
   const tt = tiltAt(t.x, span); t.tilt += (tt - t.tilt) * Math.min(1, dt * 10);
   if ((t.emp > 0 || t.stun) && Math.random() < 0.5) spark(t.x + rand(-20, 20), t.y - rand(4, 34), rand(-30, 30), rand(-60, -10), '#bfff9a', .25, 2, 0);
 }
@@ -2561,7 +2587,7 @@ function updateProjectiles(dt) {
         for (let i = 0; i < pa.apexSplit; i++) spawnProj(p.x, p.y, p.vx * 0.9 + (i - (pa.apexSplit - 1) / 2) * 75, p.vy + 20, 'shard', p.owner, 0.12);
         break;
       }
-      if (p.y > H + 60 || p.life > 8) { p.gone = true; break; }
+      if (p.y > H + ABYSS + 260 || p.life > 8) { p.gone = true; break; }
       if (p.x < 0 || p.x > WORLD_W) {
         if (p.bounces > 0) { p.vx = -p.vx * 0.8; p.x = clamp(p.x, 1, WORLD_W - 1); p.bounces--; bounceFx(p); continue; }
         p.gone = true; break;
@@ -2686,10 +2712,22 @@ function draw() {
   drawWeather();
   drawProjectiles(); drawBeams(); drawParticles(); drawSpecials();
   ctx.restore();
+  drawSinkWarn();
   drawDarkness();
   ctx.drawImage(vigL.c, 0, 0, W, H);
   drawHud();
   if (showFps) { ctx.fillStyle = '#7CFC7C'; ctx.font = '11px monospace'; ctx.textAlign = 'left'; ctx.fillText(Math.round(1000 / fpsEma) + ' fps · kvalita ' + quality + ' · ×' + SCALE.toFixed(1) + ' · ' + particles.length + ' častíc', 8, H - 8); }
+}
+function drawSinkWarn() {   // prepadnutý tank je mimo obrazovky - ukáž výstrahu pri spodnom okraji
+  const z = cam.zoom;
+  tanks.forEach(t => {
+    if (!t.sinkWarn || t.dead) return;
+    const sx = clamp((t.x - cam.x) * z + W / 2, 90, W - 90), y = H - 34, on = Math.floor(time * 3) % 2;
+    ctx.save(); ctx.textAlign = 'center'; ctx.font = 'bold 13px system-ui';
+    ctx.fillStyle = on ? '#ff5a3a' : '#ffb04a'; ctx.beginPath(); ctx.moveTo(sx, H - 6); ctx.lineTo(sx - 12, y + 6); ctx.lineTo(sx + 12, y + 6); ctx.closePath(); ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.85)'; const txt = '⚠ ' + t.name + ' sa prepadá' + (t.id === turnIdx ? ' · POSLEDNÝ ŤAH' : '');
+    ctx.strokeText(txt, sx, y); ctx.fillStyle = '#fff'; ctx.fillText(txt, sx, y); ctx.restore();
+  });
 }
 let darkCv = null;
 function drawDarkness() {   // modifikátor "Tma": čierna vrstva s dierami okolo tankov, striel a výbuchov
@@ -3823,17 +3861,26 @@ function renderBoard() {
 }
 function localBoardRowsHtml() {
   const list = Object.entries(profiles).map(([k, p]) => [k, p]).sort((a, b) => b[1].wins - a[1].wins || b[1].rounds - a[1].rounds || b[1].matches - a[1].matches);
-  return list.length ? '<table class="bt"><tr><th>#</th><th>Prezývka</th><th>Zápasy</th><th>Výhry</th><th>%</th><th>Kolá</th><th>Tanky</th><th>Max LV</th><th></th></tr>' +
+  return list.length ? '<table class="bt"><tr><th>#</th><th>Prezývka</th><th>Zápasy</th><th>Výhry</th><th>%</th><th>Kolá</th><th>Tanky</th><th>Max LV</th><th>⛏ Dungeon</th><th></th></tr>' +
     list.map(([k, p], i) => '<tr><td>' + (i + 1) + '</td><td><i class="dot" style="background:' + (isColor(p.color) ? p.color : '#888') + '"></i>' + esc(p.nick) + '</td><td>' + p.matches + '</td><td>' + p.wins + '</td><td>' +
-      (p.matches ? Math.round(100 * p.wins / p.matches) : 0) + '</td><td>' + p.rounds + '</td><td>' + p.kills + '</td><td>' + p.bestLevel + '</td><td><button class="x" data-del="' + esc(k) + '" title="Zmazať profil">✕</button></td></tr>').join('') + '</table>'
+      (p.matches ? Math.round(100 * p.wins / p.matches) : 0) + '</td><td>' + p.rounds + '</td><td>' + p.kills + '</td><td>' + p.bestLevel + '</td><td>' + (p.dungeon ? p.dungeon.best : 1) + '</td><td><button class="x" data-del="' + esc(k) + '" title="Zmazať profil">✕</button></td></tr>').join('') + '</table>'
     : '<p>Zatiaľ tu nie je žiadny profil. Odohraj zápas, nech sa ti začne zbierať štatistika.</p>';
 }
+function dungeonBoardHtml(rows, myKey) {
+  if (!rows || !rows.length) return '';
+  return '<div class="boardSub">⛏ Najhlbšie poschodie Dungeonu</div><table class="bt"><tr><th>#</th><th>Prezývka</th><th>Poschodie</th></tr>' +
+    rows.map((p, i) => '<tr' + (myKey && nickKey(p.nick) === myKey ? ' class="me"' : '') + '><td>' + (['🥇', '🥈', '🥉'][i] || (i + 1)) + '</td><td><i class="dot" style="background:' + (isColor(p.color) ? p.color : '#888') + '"></i>' + esc(p.nick) + '</td><td><b>' + p.dungeon_best + '</b>' + (p.dungeon_best >= 6 ? ' 👹' : '') + '</td></tr>').join('') + '</table>';
+}
 async function renderBoardGlobal() {   // globálny rebríček zo Supabase (verejne čitateľná tabuľka profiles) - zoradený podľa veliteľskej hodnosti a výhier; keď je offline/nedostupný, potichu padne späť na lokálny zoznam
-  let rows = null;
+  let rows = null, dRows = null;
   if (sb) {
     try {
       const { data, error } = await sb.from('profiles').select('nick,color,level,wins,matches,rounds,kills,best_level').order('level', { ascending: false }).order('wins', { ascending: false }).limit(50);
       if (!error && Array.isArray(data)) rows = data;
+    } catch (_) {}
+    try {   // rebríček hĺbky Dungeonu - stĺpec dungeon_best vznikne až po spustení aktualizovaného supabase/schema.sql, dovtedy sa sekcia potichu vynechá
+      const { data, error } = await sb.from('profiles').select('nick,color,dungeon_best').gt('dungeon_best', 1).order('dungeon_best', { ascending: false }).limit(15);
+      if (!error && Array.isArray(data)) dRows = data;
     } catch (_) {}
   }
   const myKey = cloudUser ? nickKey(cloudUser.nick) : (setup.players[0].nick ? nickKey(setup.players[0].nick) : null);
@@ -3843,7 +3890,7 @@ async function renderBoardGlobal() {   // globálny rebríček zo Supabase (vere
           (p.matches ? Math.round(100 * p.wins / p.matches) : 0) + '</td><td>' + p.rounds + '</td><td>' + p.kills + '</td></tr>').join('') + '</table>'
       : '<p>Zatiaľ tu nie je žiadny hráč s Google účtom. Buď prvý!</p>')
     : '<p class="muted">Globálny rebríček sa nepodarilo načítať (skontroluj internet). Zobrazujem len profily v tomto zariadení.</p>';
-  $('boardBody').innerHTML = globalHtml + '<div class="boardSub">Profily v tomto zariadení</div>' + localBoardRowsHtml();
+  $('boardBody').innerHTML = globalHtml + dungeonBoardHtml(dRows, myKey) + '<div class="boardSub">Profily v tomto zariadení</div>' + localBoardRowsHtml();
 }
 $('boardBtn').addEventListener('click', () => { hide('settings'); renderBoard(); show('board'); });
 $('boardClose').addEventListener('click', () => { hide('board'); show('settings'); });
