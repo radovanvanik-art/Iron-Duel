@@ -1651,6 +1651,9 @@ $('onlineClose').addEventListener('click', () => { netLeave(); hide('online'); s
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const gy = x => ground[clamp(Math.round(x), 0, WORLD_W)];
+// priepasť: terén sa dá vykopať aj pod spodný okraj arény (H) a tank, ktorý tam spadne, je zničený (pozri swallowed)
+const ABYSS = 220;
+let lastDigger = -1;   // kto naposledy vykopal kráter - jemu sa pripíše zničenie tanku, ktorý spadol do hlbín
 
 // ---------- zvuk ----------
 let actx = null;
@@ -1864,7 +1867,7 @@ function obTop(o) { return o.base - o.h; }
 function carve(cx, cy, r) {
   for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(WORLD_W, Math.ceil(cx + r)); x++) {
     const dx = x - cx, dy = Math.sqrt(Math.max(0, r * r - dx * dx));
-    if (ground[x] >= cy - dy && ground[x] < cy + dy) ground[x] = Math.min(H, cy + dy);
+    if (ground[x] >= cy - dy && ground[x] < cy + dy) ground[x] = Math.min(H + ABYSS, cy + dy);
   }
   decor = decor.filter(d => Math.abs(gy(d.x) - d.y0) < 14);
   trees = trees.filter(tr => Math.abs(gy(tr.x) - tr.y0) < 20);
@@ -2386,7 +2389,7 @@ function killTank(t, ownerId) {
   const bk = t.boss ? 4 : 1;   // boss exploduje celou šírkou trupu a mnohokrát silnejšie
   for (let i = 0; i < 60 * bk; i++) {
     const a = rand(0, 6.28), v = rand(60, 380);
-    spark(t.x + (t.boss ? rand(-t.boss.hw, t.boss.hw) : 0), t.y - 14 * (t.k || 1), Math.cos(a) * v, Math.sin(a) * v - 100, ['#ff7043', '#ffd54a', '#444', '#ff3d00'][i % 4], rand(.5, 1.4), rand(3, 8), 300, i % 4 === 2 ? '' : 'glow');
+    spark(t.x + (t.boss ? rand(-t.boss.hw, t.boss.hw) : 0), Math.min(t.y, H - 8) - 14 * (t.k || 1), Math.cos(a) * v, Math.sin(a) * v - 100, ['#ff7043', '#ffd54a', '#444', '#ff3d00'][i % 4], rand(.5, 1.4), rand(3, 8), 300, i % 4 === 2 ? '' : 'glow');
   }
   noise(0.7, 0.3, 500); tone(120, 30, 0.6, 'sawtooth', 0.1); vibrate(80);
   shake = t.boss ? 28 : 14;
@@ -2399,6 +2402,7 @@ function explosion(x, y, type, ownerId) {
   if (a.dirt) { addDirt(x, y, a.dirt); for (let i = 0; i < 24; i++) spark(x, y, rand(-140, 140), rand(-220, -30), '#b58a5a', rand(0.4, 0.9), rand(3, 7)); noise(0.3, 0.2, 500); return; }
   if (a.tele) { teleportTank(ownerId, x); return; }
   if (a.strike) { strikes.push({ x, t: 1.3, n: a.strike, owner: ownerId }); tone(900, 300, 0.3, 'square', 0.05); return; }
+  lastDigger = ownerId;
   carve(x, y, a.crater * biome().crater);
   scorch(x, y, Math.max(20, a.crater * biome().crater * 1.6));
   if (a.crater >= 35 && owner) reward(owner, Math.round(a.crater / 8), 'terrain');   // veľký kráter = malý bonus za pretvarovanie terénu
@@ -2481,6 +2485,11 @@ function blocked(t, nx) {
   return obstacles.some(o => nx + 22 > o.x && nx - 22 < o.x + o.w && obTop(o) < t.y - 4);
 }
 const dustCol = () => ({ desert: 'rgba(225,195,140,.55)', winter: 'rgba(240,246,252,.6)', mountains: 'rgba(160,160,170,.5)' }[biomeKey] || 'rgba(150,125,90,.5)');
+function swallowed(t) {   // tank sa "prepadol do zabudnutia": zničený, až keď pod spodným okrajom arény zmizne 2/3 trupu, alebo - ak má zdvihnutú hlaveň - celá hlaveň
+  const h = t.artPivotH || 33, m = muzzle(t);
+  if (m.y < t.y - h) return m.y >= H;   // zdvihnutá hlaveň (koniec je nad trupom) musí zájsť celá
+  return t.y - H >= h * 2 / 3;
+}
 function updateTank(t, dt) {
   if (t.dead) return;
   const B = biome();
@@ -2532,6 +2541,10 @@ function updateTank(t, dt) {
   if (t.boss) obstacles.slice().forEach(o => { if (t.x + tankHW(t) > o.x && t.x - tankHW(t) < o.x + o.w && obTop(o) < t.y - 4) destroyObstacle(o, t.id); });
   const g = groundAvg(t.x, span);
   if (t.y < g) t.y = Math.min(g, t.y + 420 * dt); else t.y = Math.max(g, t.y - 320 * dt);
+  if (state === 'play' && swallowed(t)) {
+    floatText(t.x, H - 60, '⚠ Prepadol sa do hlbín!', '#ff9a3c'); noise(0.6, 0.4, 250);
+    killTank(t, lastDigger !== t.id ? lastDigger : -1); return;
+  }
   const tt = tiltAt(t.x, span); t.tilt += (tt - t.tilt) * Math.min(1, dt * 10);
   if ((t.emp > 0 || t.stun) && Math.random() < 0.5) spark(t.x + rand(-20, 20), t.y - rand(4, 34), rand(-30, 30), rand(-60, -10), '#bfff9a', .25, 2, 0);
 }
