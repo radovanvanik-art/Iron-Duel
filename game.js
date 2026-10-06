@@ -1700,7 +1700,17 @@ function makeTank(id, cfg) {
     hp: BASE_HP, shield: 0, sel: 'ap', cd: 0, emp: 0, dead: false, prevAmmoBtn: '',
   };
 }
-const maxHp = t => BASE_HP + HP_PER_ARMOR * t.armorLvl + HP_PER_LEVEL * (t.level - 1);
+// bossovia Dungeonu: jedna entita s vlastným hitboxom - 'giant' = jeden obrovský tank, 'triple' = tri tanky spojené pancierovými mostmi (salva troch hlavní)
+// s = mierka trupu, hw/hh = polšírka/výška zásahovej zóny, gap = rozstup trojice (len triple), hpMul/dmgMul = násobok životov / poškodenia
+const BOSS_KINDS = {
+  giant:  { s: 2.5, hw: 150, hh: 84, hpMul: 3.4, dmgMul: 1.3 },
+  triple: { s: 0.9, hw: 165, hh: 62, hpMul: 3.0, dmgMul: 1, gap: 118 },
+};
+const maxHp = t => Math.round((BASE_HP + HP_PER_ARMOR * t.armorLvl + HP_PER_LEVEL * (t.level - 1)) * (t.boss ? t.boss.hpMul : 1));
+const tankHW = t => t.boss ? t.boss.hw : 24;          // polšírka zásahovej zóny
+const tankSpan = t => t.boss ? t.boss.hw * 0.6 : 18;   // polovičný rozchod, z ktorého sa berie sklon terénu pod tankom
+const bossBarrels = t => t.boss && t.boss.gap ? [-t.boss.gap, 0, t.boss.gap] : [0];   // posun hlavní pozdĺž trupu
+function makeBoss(t, kind) { t.boss = Object.assign({ kind }, BOSS_KINDS[kind]); t.k = t.boss.s; t.artPivotH = tankArtPivotH(t.color) * t.k; }
 const fuelCap = t => FUEL_CAP + 50 * t.fuelLvl;
 
 function reward(t, amount, key) {
@@ -1724,16 +1734,17 @@ function addXp(t, n) {
 }
 
 function placeTank(t, x) {
-  t.x = x; t.y = groundAvg(x); t.tilt = tiltAt(x);
+  if (t.boss) x = clamp(x, tankHW(t) + 20, WORLD_W - tankHW(t) - 20);   // široký boss sa nesmie vyliezť mimo mapy
+  t.x = x; t.y = groundAvg(x, tankSpan(t)); t.tilt = tiltAt(x, tankSpan(t));
   t.face = x < WORLD_W / 2 ? 1 : -1; t.ang = t.face > 0 ? 50 : 130;
   t.dead = false; t.cd = 0; t.emp = 0; t.stun = false; t.fired = false; t.sel = 'ap';
 }
-function groundAvg(x) { return (gy(x - 18) + gy(x + 18)) / 2; }
-function tiltAt(x) { return Math.atan2(gy(x + 18) - gy(x - 18), 36); }
-function pivot(t) { const h = t.artPivotH || 22; return { x: t.x + h * Math.sin(t.tilt), y: t.y - h * Math.cos(t.tilt) }; }
-function muzzle(t) {
-  const p = pivot(t), a = t.ang * Math.PI / 180, art = tankArt[TANK_COLOR_NAME[String(t.color).toLowerCase()]];
-  const L = 36 * ((art && art.loaded) ? TANK_TARGET_W / 76 : 1);
+function groundAvg(x, r = 18) { return (gy(x - r) + gy(x + r)) / 2; }
+function tiltAt(x, r = 18) { return Math.atan2(gy(x + r) - gy(x - r), 2 * r); }
+function pivot(t, off = 0) { const h = t.artPivotH || 22; return { x: t.x + h * Math.sin(t.tilt) + off * Math.cos(t.tilt), y: t.y - h * Math.cos(t.tilt) + off * Math.sin(t.tilt) }; }
+function muzzle(t, off = 0) {   // off = posun hlavne pozdĺž trupu (trojitý boss má tri hlavne)
+  const p = pivot(t, off), a = t.ang * Math.PI / 180, art = tankArt[TANK_COLOR_NAME[String(t.color).toLowerCase()]];
+  const L = 36 * ((art && art.loaded) ? TANK_TARGET_W / 76 : 1) * (t.k || 1);
   return { x: p.x + Math.cos(a) * L, y: p.y - Math.sin(a) * L, dx: Math.cos(a), dy: -Math.sin(a) };
 }
 
@@ -1883,7 +1894,12 @@ function toMenu() {
   refreshContinue(); renderSetup(); renderHome(); show('home');
 }
 // ---------- režim Dungeon: podzemné poschodia proti botom, naposledy stojaci tím vyhráva, nekonečná veža s bossom každých 5 poschodí ----------
-const DUNGEON_BOSS_NAMES = ['👹 Krtko Obor', '👹 Pán Štôlne', '👹 Jadro Hory', '👹 Žeravý Tyran', '👹 Posledný Strážca'];
+const DUNGEON_BOSSES = {   // bossovia sa striedajú: 5. poschodie obor, 10. trojica spojených tankov, 15. obor ... (každé ďalšie kolo je pomenované zvlášť)
+  giant:  ['👹 Krtko Obor', '👹 Jadro Hory', '👹 Posledný Strážca'],
+  triple: ['👹 Trojča Štôlne', '👹 Cerberus Hlbín', '👹 Žeravá Trojica'],
+};
+const dungeonBossKind = floor => (Math.floor(floor / 5) % 2) ? 'giant' : 'triple';
+const dungeonBossName = floor => { const kind = dungeonBossKind(floor), list = DUNGEON_BOSSES[kind]; return list[Math.min(list.length - 1, Math.floor((Math.floor(floor / 5) - 1) / 2))]; };
 function dungeonBotCount(floor, boss) { return boss ? 1 : Math.min(4, 1 + Math.floor((floor - 1) / 3)); }
 function dungeonBotLevel(floor, boss) { return boss ? 3 : clampInt(1 + Math.floor((floor - 1) / 4), 1, 3); }
 function buildDungeonEnemies(floor, startId) {
@@ -1892,8 +1908,9 @@ function buildDungeonEnemies(floor, startId) {
   for (let i = 0; i < n; i++) {
     const color = PALETTE.find(c => !used.has(c.toLowerCase())) || PALETTE[(startId + i) % PALETTE.length];
     used.add(color.toLowerCase());
-    const name = boss ? DUNGEON_BOSS_NAMES[Math.min(DUNGEON_BOSS_NAMES.length - 1, Math.floor(floor / 5) - 1)] : ('Nájazdník ' + (startId + i + 1));
+    const name = boss ? dungeonBossName(floor) : ('Nájazdník ' + (startId + i + 1));
     const t = makeTank(startId + i, { name, color, nick: null, bot: lvl, team: 1 });
+    if (boss) makeBoss(t, dungeonBossKind(floor));
     t.money = Math.round(420 + floor * 55 + (boss ? 700 : 0));
     t.armorLvl = Math.min(6, Math.floor(floor / 4) + (boss ? 2 : 0));
     botShop(t);
@@ -1910,7 +1927,7 @@ function dungeonEnterFloor() {   // spoločné jadro pre vstup na poschodie - hr
   buildPads(); enterShop();
   hide('dungeon'); hide('menu'); hide('end'); hide('home');
   const floor = dungeon.progress.floor;
-  $('shopTitle').textContent = '⛏ Dungeon · Poschodie ' + floor + (floor % 5 === 0 ? ' · 👹 BOSS' : '');
+  $('shopTitle').textContent = '⛏ Dungeon · Poschodie ' + floor + (floor % 5 === 0 ? ' · 👹 BOSS: ' + dungeonBossName(floor) + (dungeonBossKind(floor) === 'giant' ? ' (obrovský tank)' : ' (3 spojené tanky)') : '');
 }
 function startDungeon() {   // čerstvý vstup do Dungeonu (z domovskej obrazovky) - tu sa tank hráča vytvára nanovo so štartovacou výzbrojou
   story.active = false; story.idx = null; document.body.classList.remove('storymode');
@@ -1924,7 +1941,7 @@ function startDungeon() {   // čerstvý vstup do Dungeonu (z domovskej obrazovk
 }
 function renderDungeonScreen() {
   const floor = dungeon.progress.floor, best = dungeon.progress.best, boss = floor % 5 === 0;
-  $('dungeonInfo').innerHTML = 'Aktuálne poschodie: <b>' + floor + '</b>' + (boss ? ' · 👹 poschodie bossa' : '') +
+  $('dungeonInfo').innerHTML = 'Aktuálne poschodie: <b>' + floor + '</b>' + (boss ? ' · 👹 poschodie bossa: ' + dungeonBossName(floor) : '') +
     '<br>Najhlbšie dosiahnuté poschodie: <b>' + best + '</b>' +
     '<br><small>Ty (a prípadne spoluhráči na tejto obrazovke) proti botom - prestrieľaj sa hlinou k súperom. Pozor: vlastný výbuch v tesnej chodbe zasiahne aj teba!</small>';
   $('dungeonEnterBtn').textContent = '▶ Vstúpiť · Poschodie ' + floor;
@@ -1971,13 +1988,13 @@ function nextTurn() {
 // ---------- počítačový súper ----------
 function simShot(t, type, ang, pw) {
   const a = AMMO[type], rad = ang * Math.PI / 180, pv = pivot(t);
-  const m = { x: pv.x + Math.cos(rad) * 36, y: pv.y - Math.sin(rad) * 36 }, sp = a.speed * powerMul(pw);
+  const L = t.boss ? 36 * 1.7 * t.k : 36, m = { x: pv.x + Math.cos(rad) * L, y: pv.y - Math.sin(rad) * L }, sp = a.speed * powerMul(pw);
   const p = { x: m.x, y: m.y, vx: Math.cos(rad) * sp, vy: -Math.sin(rad) * sp, type, life: 0 };
   for (let i = 0; i < 160; i++) {
     stepShot(p, 1 / 30);
     if (p.x < 0 || p.x > WORLD_W || p.y > H) return { x: p.x, y: Math.min(p.y, H) };
     if (p.y >= gy(p.x)) return { x: p.x, y: p.y };
-    if (tanks.some(o => !o.dead && (o !== t || p.life > 0.25) && inTank(o, p.x, p.y))) return { x: p.x, y: p.y };
+    if (tanks.some(o => !o.dead && (o !== t || (p.life > 0.25 && !t.boss)) && inTank(o, p.x, p.y))) return { x: p.x, y: p.y };
     if (obstacles.some(o => p.x >= o.x && p.x <= o.x + o.w && p.y >= obTop(o) && p.y <= o.base)) return { x: p.x, y: p.y };
   }
   return { x: p.x, y: p.y };
@@ -2188,10 +2205,10 @@ function addDirt(cx, cy, r) {
 }
 function teleportTank(id, x) {
   const t = tanks[id]; if (!t || t.dead) return;
-  const nx = clamp(x, 24, WORLD_W - 24);
+  const nx = clamp(x, tankHW(t), WORLD_W - tankHW(t));
   if (blocked(t, nx)) { floatText(t.x, t.y - 50, 'Blokované!', '#ff9a3c'); return; }
   for (let i = 0; i < 24; i++) spark(t.x + rand(-16, 16), t.y - rand(0, 34), rand(-60, 60), rand(-120, 20), '#c9a7ff', rand(0.3, 0.7), 3, 0);
-  t.x = nx; t.y = groundAvg(nx); t.vx = 0;
+  t.x = nx; t.y = groundAvg(nx, tankSpan(t)); t.vx = 0;
   for (let i = 0; i < 24; i++) spark(t.x + rand(-16, 16), t.y - rand(0, 34), rand(-60, 60), rand(-120, 20), '#e6d6ff', rand(0.3, 0.7), 3, 0);
   tone(200, 1500, 0.3, 'sine', 0.08);
 }
@@ -2219,11 +2236,15 @@ function fire(t) {
     tone(500, 1000, 0.3, 'triangle', 0.08); return;
   }
   const sp = a.speed * powerMul(t.power);
-  projectiles.push({ x: m.x, y: m.y, vx: m.dx * sp, vy: m.dy * sp, type, owner: t.id, bounces: a.bounces || 0, life: 0 });
+  const salvo = a.dmg > 0 && a.splash < 70 && !a.strike ? bossBarrels(t) : [0];   // trojitý boss pália z troch hlavní naraz (ťažké zbrane len z jednej)
+  salvo.forEach(off => {
+    const mm = off ? muzzle(t, off) : m;
+    projectiles.push({ x: mm.x, y: mm.y, vx: mm.dx * sp, vy: mm.dy * sp, type, owner: t.id, bounces: a.bounces || 0, life: 0 });
+    for (let i = 0; i < 6; i++) spark(mm.x, mm.y, mm.dx * 120 + rand(-60, 60), mm.dy * 120 + rand(-60, 60), '#ffd27a', 0.25, 3, 300, 'glow');
+    glows.push({ x: mm.x, y: mm.y, r: 26 * (t.k || 1), life: 0.12, max: 0.12, color: '#ffe9a0' });
+  });
   tone(220, 70, 0.18, 'sawtooth', 0.07); noise(0.08, 0.08, 1500); vibrate(10);
-  for (let i = 0; i < 6; i++) spark(m.x, m.y, m.dx * 120 + rand(-60, 60), m.dy * 120 + rand(-60, 60), '#ffd27a', 0.25, 3, 300, 'glow');
-  glows.push({ x: m.x, y: m.y, r: 26, life: 0.12, max: 0.12, color: '#ffe9a0' });
-  shake = Math.max(shake, 2);
+  shake = Math.max(shake, t.boss ? 6 : 2);
 }
 function fireLaser(t, m) {
   tone(1400, 200, 0.35, 'sawtooth', 0.07);
@@ -2239,7 +2260,7 @@ function fireLaser(t, m) {
   if (hit) for (let i = 0; i < 14; i++) spark(x, y, rand(-160, 160), rand(-200, 40), AMMO.laser.color, 0.5, 3, 300, 'glow');
   shake = Math.max(shake, 3);
 }
-function inTank(t, x, y) { return x >= t.x - 24 && x <= t.x + 24 && y >= t.y - 34 && y <= t.y + 2; }
+function inTank(t, x, y) { const hw = tankHW(t), hh = t.boss ? t.boss.hh : 34; return x >= t.x - hw && x <= t.x + hw && y >= t.y - hh && y <= t.y + 2; }
 
 function spark(x, y, vx, vy, color, life, size, grav = 300, fx) {
   if (particles.length >= MAXP) return;
@@ -2268,18 +2289,19 @@ function killTank(t, ownerId) {
   t.hp = 0; t.dead = true;
   const owner = tanks[ownerId];
   if (owner && ownerId !== t.id) { reward(owner, KILL_BONUS, 'kill'); addXp(owner, 50); owner.kills = (owner.kills || 0) + 1; }
-  for (let i = 0; i < 60; i++) {
+  const bk = t.boss ? 4 : 1;   // boss exploduje celou šírkou trupu a mnohokrát silnejšie
+  for (let i = 0; i < 60 * bk; i++) {
     const a = rand(0, 6.28), v = rand(60, 380);
-    spark(t.x, t.y - 14, Math.cos(a) * v, Math.sin(a) * v - 100, ['#ff7043', '#ffd54a', '#444', '#ff3d00'][i % 4], rand(.5, 1.4), rand(3, 8), 300, i % 4 === 2 ? '' : 'glow');
+    spark(t.x + (t.boss ? rand(-t.boss.hw, t.boss.hw) : 0), t.y - 14 * (t.k || 1), Math.cos(a) * v, Math.sin(a) * v - 100, ['#ff7043', '#ffd54a', '#444', '#ff3d00'][i % 4], rand(.5, 1.4), rand(3, 8), 300, i % 4 === 2 ? '' : 'glow');
   }
   noise(0.7, 0.3, 500); tone(120, 30, 0.6, 'sawtooth', 0.1); vibrate(80);
-  shake = 14;
+  shake = t.boss ? 28 : 14;
   checkRoundEnd();
 }
 function explosion(x, y, type, ownerId) {
   const a = AMMO[type];
   lastImpact = { x, y, t: 1.1, mag: a.splash || 0 };
-  const owner = tanks[ownerId], dmg = a.dmg * dmgMul(owner, type);
+  const owner = tanks[ownerId], dmg = a.dmg * dmgMul(owner, type) * (owner && owner.boss ? owner.boss.dmgMul : 1);
   if (a.dirt) { addDirt(x, y, a.dirt); for (let i = 0; i < 24; i++) spark(x, y, rand(-140, 140), rand(-220, -30), '#b58a5a', rand(0.4, 0.9), rand(3, 7)); noise(0.3, 0.2, 500); return; }
   if (a.tele) { teleportTank(ownerId, x); return; }
   if (a.strike) { strikes.push({ x, t: 1.3, n: a.strike, owner: ownerId }); tone(900, 300, 0.3, 'square', 0.05); return; }
@@ -2291,7 +2313,8 @@ function explosion(x, y, type, ownerId) {
   trees.filter(tr => Math.hypot(tr.x - x, tr.y0 - tr.h / 2 - y) < a.splash + 25).forEach(tr => killTree(tr, ownerId));
   tanks.forEach(t => {
     if (t.dead) return;
-    const d = Math.hypot(x - t.x, y - (t.y - 14));
+    const ex = t.boss ? t.boss.hw - 24 : 0, ey = t.boss ? t.boss.hh - 34 : 0;   // boss je široký/vysoký - vzdialenosť sa meria od okraja zásahovej zóny, nie od stredu
+    const d = Math.hypot(Math.max(Math.abs(x - t.x) - ex, 0), Math.max(Math.abs(y - (t.y - 14)) - ey, 0));
     if (d < a.splash + 18) {
       const f = 1 - clamp((d - 18) / a.splash, 0, 1) * 0.65;
       if (a.stun) { t.emp = 1; floatText(t.x, t.y - 50, 'EMP!', '#8cff7a'); }
@@ -2357,7 +2380,8 @@ function inputOf(p) {
   return { left: a.left || k.left, right: a.right || k.right, up: a.up || k.up, down: a.down || k.down, fire: a.fire || k.fire, pup: a.pup || k.pup, pdown: a.pdown || k.pdown };
 }
 function blocked(t, nx) {
-  if (tanks.some(o => o !== t && !o.dead && Math.abs(nx - o.x) < 50)) return true;
+  if (tanks.some(o => o !== t && !o.dead && Math.abs(nx - o.x) < tankHW(t) + tankHW(o) + 2)) return true;
+  if (t.boss) return false;   // boss budovy nerešpektuje - rozdrví ich (pozri updateTank)
   return obstacles.some(o => nx + 22 > o.x && nx - 22 < o.x + o.w && obTop(o) < t.y - 4);
 }
 const dustCol = () => ({ desert: 'rgba(225,195,140,.55)', winter: 'rgba(240,246,252,.6)', mountains: 'rgba(160,160,170,.5)' }[biomeKey] || 'rgba(150,125,90,.5)');
@@ -2378,7 +2402,7 @@ function updateTank(t, dt) {
       if (t.noFuelT <= 0) { t.noFuelT = 1.2; floatText(t.x, t.y - 50, 'BEZ PALIVA!', '#ff9a3c'); }
     }
   }
-  const slope = (gy(t.x + 18) - gy(t.x - 18)) / 36;   // >0 = klesá doprava
+  const span = tankSpan(t), slope = (gy(t.x + span) - gy(t.x - span)) / (2 * span);   // >0 = klesá doprava
   const sp = TANK_SPEED * (1 + 0.2 * t.speedLvl) * B.move, limit = 1.05 + 0.08 * t.speedLvl;
   let vx = 0;
   if (B.ice) {   // ľad: zotrvačnosť a sklz zo svahov
@@ -2394,7 +2418,7 @@ function updateTank(t, dt) {
     if (dir && up < limit) vx = dir * sp * clamp(1 - 0.5 * Math.max(0, up), 0.3, 1.3);
   }
   if (vx) {
-    const nx = clamp(t.x + vx * dt, 24, WORLD_W - 24);
+    const nx = clamp(t.x + vx * dt, tankHW(t), WORLD_W - tankHW(t));
     if (!blocked(t, nx)) {
       if (dir) t.fuel = Math.max(0, t.fuel - Math.abs(nx - t.x) * FUEL_PER_PX * B.fuel * (1 + 0.5 * Math.max(0, -slope * dir)));
       t.trackPhase = (t.trackPhase || 0) + (nx - t.x);
@@ -2409,9 +2433,10 @@ function updateTank(t, dt) {
   t.recoil = Math.max(0, (t.recoil || 0) - dt * 4);
   if (quality > 0 && t.hp < maxHp(t) * 0.35 && Math.random() < dt * 6) spark(t.x + rand(-8, 8), t.y - 28, rand(-10, 10), rand(-50, -25), t.hp < maxHp(t) * 0.18 ? 'rgba(30,30,30,.7)' : 'rgba(90,90,90,.6)', 1.2, rand(5, 9), -15);
   // pripnutie k terénu
-  const g = groundAvg(t.x);
+  if (t.boss) obstacles.slice().forEach(o => { if (t.x + tankHW(t) > o.x && t.x - tankHW(t) < o.x + o.w && obTop(o) < t.y - 4) destroyObstacle(o, t.id); });
+  const g = groundAvg(t.x, span);
   if (t.y < g) t.y = Math.min(g, t.y + 420 * dt); else t.y = Math.max(g, t.y - 320 * dt);
-  const tt = tiltAt(t.x); t.tilt += (tt - t.tilt) * Math.min(1, dt * 10);
+  const tt = tiltAt(t.x, span); t.tilt += (tt - t.tilt) * Math.min(1, dt * 10);
   if ((t.emp > 0 || t.stun) && Math.random() < 0.5) spark(t.x + rand(-20, 20), t.y - rand(4, 34), rand(-30, 30), rand(-60, -10), '#bfff9a', .25, 2, 0);
 }
 function updateProjectiles(dt) {
@@ -2434,7 +2459,7 @@ function updateProjectiles(dt) {
       }
       // tanky
       for (const t of tanks) {
-        if (!t.dead && p.life >= (p.arm || 0) && (t.id !== p.owner || p.life > 0.25) && inTank(t, p.x, p.y)) { explosion(p.x, p.y, p.type, p.owner); p.gone = true; break; }
+        if (!t.dead && p.life >= (p.arm || 0) && (t.id !== p.owner || (p.life > 0.25 && !t.boss)) && inTank(t, p.x, p.y)) { explosion(p.x, p.y, p.type, p.owner); p.gone = true; break; }
       }
       if (p.gone) break;
       // prekážky
@@ -2526,7 +2551,7 @@ function update(dt) {
       if (netLiveTimer <= 0) { netLiveTimer = 0.15; netPublish(); }
     }
   } else if (state === 'shop') {
-    tanks.forEach(t => { t.tilt = tiltAt(t.x); t.y = groundAvg(t.x); });
+    tanks.forEach(t => { t.tilt = tiltAt(t.x, tankSpan(t)); t.y = groundAvg(t.x, tankSpan(t)); });
   }
   let pw = 0;   // aktualizácia častíc na mieste (bez alokácií)
   for (let i = 0; i < particles.length; i++) {
@@ -2560,7 +2585,7 @@ function drawTurnMarker() {
   if (state !== 'play') return;
   const t = tanks[turnIdx]; if (!t || t.dead) return;
   drawAimAids(t);
-  const y = t.y - 96 + Math.sin(time * 5) * 4;
+  const y = t.y - (t.boss ? t.boss.hh + 78 : 96) + Math.sin(time * 5) * 4;
   ctx.fillStyle = t.color; ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(t.x, y + 14); ctx.lineTo(t.x - 10, y); ctx.lineTo(t.x + 10, y); ctx.closePath(); ctx.fill(); ctx.stroke();
   ctx.textAlign = 'center'; ctx.font = 'bold 12px system-ui'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.8)';
@@ -2854,54 +2879,99 @@ function tankSprite(color, dead) {   // trup tanku sa vykreslí raz pre každú 
   if (dead) { x.strokeStyle = 'rgba(0,0,0,.7)'; x.lineWidth = 1.4; x.beginPath(); x.moveTo(-10, -25); x.lineTo(-3, -17); x.lineTo(-8, -12); x.moveTo(8, -25); x.lineTo(13, -16); x.stroke(); }
   return (sprites[key] = L);
 }
+function drawBossArmor(t) {   // pancierové "mosty" medzi trupmi trojitého bossa / bodce a výstražné svetlo obra (kreslí sa v lokálnych súradniciach trupu)
+  const B = t.boss, h = t.artPivotH || 40, dead = t.dead;
+  const plate = dead ? '#2a2a2a' : '#2e3440', edge = dead ? '#1a1a1a' : '#12151c';
+  if (B.gap) {
+    for (const side of [-1, 1]) {
+      ctx.fillStyle = plate; ctx.fillRect(side > 0 ? 36 : -B.gap + 36, -h * 0.9, B.gap - 72, h * 0.5);
+      ctx.strokeStyle = edge; ctx.lineWidth = 2; ctx.strokeRect(side > 0 ? 36 : -B.gap + 36, -h * 0.9, B.gap - 72, h * 0.5);
+      ctx.fillStyle = dead ? '#444' : t.color; ctx.fillRect(side > 0 ? 36 : -B.gap + 36, -h * 0.72, B.gap - 72, 4);
+      ctx.fillStyle = '#7b8496';
+      for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc((side > 0 ? 36 : -B.gap + 36) + 8 + i * (B.gap - 88) / 2, -h * 0.58, 2, 0, 6.3); ctx.fill(); }
+    }
+    ctx.fillStyle = edge; ctx.fillRect(-B.gap, -h * 0.34, B.gap * 2, 7);   // spodná spojovacia lišta
+    ctx.fillStyle = plate; ctx.fillRect(-B.gap, -h * 0.34, B.gap * 2, 3);
+  } else if (!dead) {
+    ctx.fillStyle = '#20242e'; ctx.strokeStyle = edge; ctx.lineWidth = 1.5;
+    for (let i = -3; i <= 3; i++) {   // bodce na chrbte obra
+      const bx = i * 21 * B.s * 0.5, bh = (14 + (3 - Math.abs(i)) * 3) * B.s * 0.5;
+      ctx.beginPath(); ctx.moveTo(bx - 6, -h * 0.82); ctx.lineTo(bx, -h * 0.82 - bh); ctx.lineTo(bx + 6, -h * 0.82); ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+    const pulse = 0.55 + 0.45 * Math.sin(time * 5);   // pulzujúce červené "oko"
+    ctx.fillStyle = 'rgba(255,40,40,' + pulse + ')'; ctx.beginPath(); ctx.arc(-h * 0.5, -h * 0.5, 7, 0, 6.3); ctx.fill();
+    ctx.fillStyle = 'rgba(255,90,60,' + (pulse * 0.25) + ')'; ctx.beginPath(); ctx.arc(-h * 0.5, -h * 0.5, 18, 0, 6.3); ctx.fill();
+  }
+}
+function drawBossBar(t) {
+  const B = t.boss, mh = maxHp(t), w = Math.max(160, B.hw * 1.5), x = t.x - w / 2, y = t.y - B.hh - 26 * (t.k > 1 ? 1.5 : 1);
+  ctx.save(); ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(0,0,0,.65)'; roundRect(x - 3, y - 3, w + 6, 16, 7); ctx.fill();
+  ctx.fillStyle = t.hp / mh > .5 ? '#d33b3b' : t.hp / mh > .25 ? '#f0a030' : '#ffd54a';
+  const hw = w * clamp(t.hp / mh, 0, 1); if (hw > 1) { roundRect(x, y, hw, 10, 5); ctx.fill(); }
+  ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 1; roundRect(x, y, w, 10, 5); ctx.stroke();
+  ctx.font = 'bold 12px system-ui'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.85)';
+  ctx.strokeText(t.name + ' · ' + Math.ceil(t.hp) + ' / ' + mh, t.x, y - 7); ctx.fillStyle = '#fff'; ctx.fillText(t.name + ' · ' + Math.ceil(t.hp) + ' / ' + mh, t.x, y - 7);
+  ctx.restore();
+}
 function drawTank(t) {
-  const dead = t.dead;
+  const dead = t.dead, B = t.boss, k = t.k || 1, offs = bossBarrels(t);
   const art = tankArt[TANK_COLOR_NAME[String(t.color).toLowerCase()]];
   const useArt = art && art.loaded;
   ctx.save(); ctx.translate(t.x, t.y + 1); ctx.rotate(t.tilt);
-  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(0, 2, 31, 4.5, 0, 0, 6.3); ctx.fill();   // tieň
-  if (useArt) {
-    if (dead) ctx.filter = 'grayscale(1) brightness(.55)';
-    const s = art.scale;
-    ctx.drawImage(art.hull, -art.pivotX * s, -art.hullH * s, art.hullW * s, art.hullH * s);
-    if (dead) ctx.filter = 'none';
-  } else {
-    ctx.drawImage(tankSprite(t.color, dead).c, -36, -52, 72, 58);
-    ctx.fillStyle = 'rgba(0,0,0,.5)';   // pohyb pásov
-    const ph = (((t.trackPhase || 0) % 6) + 6) % 6;
-    for (let i = -26; i < 26; i += 6) ctx.fillRect(i + ph, -1, 2, 3);
-    if (!dead && t.armorLvl > 0) {   // farebný pás brnenia podľa úrovne
-      ctx.fillStyle = tierCss(t.armorLvl); ctx.fillRect(-19, -13.5, 38, 3);
-      for (let i = 0; i < t.armorLvl; i++) ctx.fillRect(-18 + i * 3.6, -27, 2, 3);
+  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(0, 2, B ? B.hw * 0.95 : 31, 4.5 * Math.min(k, 2), 0, 0, 6.3); ctx.fill();   // tieň
+  if (B && B.gap) drawBossArmor(t);   // mosty idú POD trupy, aby sa trupy prekrývali s ich okrajmi
+  offs.forEach(off => {
+    ctx.save(); ctx.translate(off, 0); ctx.scale(k, k);
+    if (useArt) {
+      if (dead) ctx.filter = 'grayscale(1) brightness(.55)';
+      const s = art.scale;
+      ctx.drawImage(art.hull, -art.pivotX * s, -art.hullH * s, art.hullW * s, art.hullH * s);
+      if (dead) ctx.filter = 'none';
+    } else {
+      ctx.drawImage(tankSprite(t.color, dead).c, -36, -52, 72, 58);
+      ctx.fillStyle = 'rgba(0,0,0,.5)';   // pohyb pásov
+      const ph = (((t.trackPhase || 0) % 6) + 6) % 6;
+      for (let i = -26; i < 26; i += 6) ctx.fillRect(i + ph, -1, 2, 3);
+      if (!dead && t.armorLvl > 0) {   // farebný pás brnenia podľa úrovne
+        ctx.fillStyle = tierCss(t.armorLvl); ctx.fillRect(-19, -13.5, 38, 3);
+        for (let i = 0; i < t.armorLvl; i++) ctx.fillRect(-18 + i * 3.6, -27, 2, 3);
+      }
     }
-  }
+    ctx.restore();
+  });
+  if (B && !B.gap) drawBossArmor(t);   // bodce obra idú NAD trup
   ctx.restore();
   if (dead) return;
-  const p = pivot(t), a = t.ang * Math.PI / 180, ux = Math.cos(a), uy = -Math.sin(a), rc = (t.recoil || 0) * 7, x0 = p.x - ux * rc, y0 = p.y - uy * rc, L = 36;
-  if (useArt) {
-    const ts = art.turretSide * art.scale;
-    ctx.save(); ctx.translate(x0, y0); ctx.rotate(-a);
-    ctx.drawImage(art.turret, -ts / 2, -ts / 2, ts, ts);
-    ctx.restore();
-  } else {
-  ctx.lineCap = 'round';
-  ctx.strokeStyle = '#161a22'; ctx.lineWidth = 8.5; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 + ux * L, y0 + uy * L); ctx.stroke();
-  ctx.strokeStyle = '#59627a'; ctx.lineWidth = 5.5; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 + ux * L, y0 + uy * L); ctx.stroke();
-  ctx.strokeStyle = t.color; ctx.lineWidth = 2.6; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 + ux * L, y0 + uy * L); ctx.stroke();
-  ctx.lineCap = 'butt'; ctx.strokeStyle = '#11141b'; ctx.lineWidth = 11;
-  ctx.beginPath(); ctx.moveTo(x0 + ux * (L - 7), y0 + uy * (L - 7)); ctx.lineTo(x0 + ux * (L - 1), y0 + uy * (L - 1)); ctx.stroke();
-  ctx.fillStyle = '#20242e'; ctx.beginPath(); ctx.arc(p.x, p.y, 4.5, 0, 6.3); ctx.fill();
-  }
+  const a = t.ang * Math.PI / 180, ux = Math.cos(a), uy = -Math.sin(a), rc = (t.recoil || 0) * 7 * k, L = 36 * k;
+  offs.forEach(off => {
+    const p = pivot(t, off), x0 = p.x - ux * rc, y0 = p.y - uy * rc;
+    if (useArt) {
+      const ts = art.turretSide * art.scale * k;
+      ctx.save(); ctx.translate(x0, y0); ctx.rotate(-a);
+      ctx.drawImage(art.turret, -ts / 2, -ts / 2, ts, ts);
+      ctx.restore();
+    } else {
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#161a22'; ctx.lineWidth = 8.5 * k; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 + ux * L, y0 + uy * L); ctx.stroke();
+      ctx.strokeStyle = '#59627a'; ctx.lineWidth = 5.5 * k; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 + ux * L, y0 + uy * L); ctx.stroke();
+      ctx.strokeStyle = t.color; ctx.lineWidth = 2.6 * k; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 + ux * L, y0 + uy * L); ctx.stroke();
+      ctx.lineCap = 'butt'; ctx.strokeStyle = '#11141b'; ctx.lineWidth = 11 * k;
+      ctx.beginPath(); ctx.moveTo(x0 + ux * (L - 7 * k), y0 + uy * (L - 7 * k)); ctx.lineTo(x0 + ux * (L - k), y0 + uy * (L - k)); ctx.stroke();
+      ctx.fillStyle = '#20242e'; ctx.beginPath(); ctx.arc(p.x, p.y, 4.5 * k, 0, 6.3); ctx.fill();
+    }
+  });
   if (t.shield > 0) {
     const T = t.shT || 1, col = tierCss(T), frac = clamp(t.shield / (t.shieldMax || 1), 0.25, 1), ss = TANK_TARGET_W / 76;
-    const pulse = frac * (0.55 + 0.25 * Math.sin(time * 6));
+    const sk = B ? (B.gap ? 3.1 : k) : 1, pulse = frac * (0.55 + 0.25 * Math.sin(time * 6));
     ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineWidth = 2 + T * 0.35;
-    ctx.beginPath(); ctx.arc(t.x, t.y - 16 * ss, (36 + (T >= 10 ? 4 : 0)) * ss, 0, 6.3);
+    ctx.beginPath(); ctx.arc(t.x, t.y - 16 * ss * (B && !B.gap ? k : 1), (36 + (T >= 10 ? 4 : 0)) * ss * sk, 0, 6.3);
     ctx.globalAlpha = pulse * 0.2; ctx.fill();
     ctx.globalAlpha = pulse; ctx.stroke();
-    if (T >= 7) { ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(t.x, t.y - 16 * ss, (42 + (T >= 10 ? 4 : 0)) * ss, 0, 6.3); ctx.stroke(); }
+    if (T >= 7) { ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(t.x, t.y - 16 * ss * (B && !B.gap ? k : 1), (42 + (T >= 10 ? 4 : 0)) * ss * sk, 0, 6.3); ctx.stroke(); }
     ctx.globalAlpha = 1;
   }
+  if (B) drawBossBar(t);
 }
 function drawProjectiles() {
   const R = { he: 6, nukeS: 8, nukeL: 11, pine: 6, bomblet: 3, shard: 3.5, lava: 4, bomb: 5, missile: 5 };
