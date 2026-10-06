@@ -1945,6 +1945,9 @@ function enterShop(resume) {
   state = 'shop'; shopTimer = SHOP_TIME; ready = tanks.map(t => !!t.bot); shopPlayer = Math.max(0, tanks.findIndex(t => !t.bot));
   if (net.active) { net.shopStep = 0; shopPlayer = net.myIdx; }
   $('shopTitle').textContent = 'Arzenál – kolo ' + round + ' · ' + biome().icon + ' ' + biome().name + (lastResult ? ' · ' + lastResult : '');
+  // v kampani/Dungeone je "Uložiť a odísť" schovaný (neukladá sa tam takto) - namiesto neho ponúkni prosté tlačidlo späť do menu,
+  // nech sa hráč vie kedykoľvek vrátiť aj z obchodu pred misiou/poschodím, nielen z pauzy počas samotného ťahu
+  $('modeQuit').style.display = (story.active || dungeon.active) ? '' : 'none';
   renderShop(); show('shop');
   if (net.active) netPublish();
 }
@@ -3300,6 +3303,7 @@ $('endShareBtn').addEventListener('click', shareMatchImage);
 $('contBtn').addEventListener('click', () => { goFullscreen(); continueGame(); });
 $('delBtn').addEventListener('click', () => ask('Zmazať uloženú hru?', () => { clearSave(); refreshContinue(); renderHome(); }));
 $('saveQuit').addEventListener('click', () => { saveGame(); toMenu(); });
+$('modeQuit').addEventListener('click', () => { ask('Naozaj sa vrátiť do menu? Rozohraná misia/poschodie sa neuloží (tvoj postup dosiaľ zostáva zachovaný).', toMenu); });
 $('menuBackBtn').addEventListener('click', () => { if (net.active) netLeave(); hide('menu'); renderHome(); show('home'); });
 $('settingsBackBtn').addEventListener('click', () => { hide('settings'); show('home'); });
 $('creditsBackBtn').addEventListener('click', () => { hide('credits'); show('home'); });
