@@ -1949,7 +1949,7 @@ function toMenu() {
 // pay = násobok peňažnej odmeny za poschodie
 const DUNGEON_MODS = {
   dark:     { icon: '🌑', name: 'Tma',                 pay: 1.25, desc: 'Vidíš len okolie svojho tanku a striel. Nepriateľov nájdeš podľa výbuchov a obrysov.' },
-  shield:   { icon: '💠', name: 'Regeneračné štíty',   pay: 1.3,  desc: 'Nepriatelia majú štít, ktorý sa im na začiatku každého ťahu čiastočne dopĺňa.' },
+  shield:   { icon: '💠', name: 'Regeneračné štíty',   pay: 1.3,  desc: 'Nepriatelia majú štít, ktorý sa im na začiatku každého ťahu mierne dopĺňa.' },
   rockfall: { icon: '🪨', name: 'Padajúce kamene',     pay: 1.2,  desc: 'Strop sa drolí - každý ťah dopadne na náhodné miesto salva kameňov. Sleduj červené výstrahy!' },
   storm:    { icon: '🌪', name: 'Búrka v šachte',      pay: 1.15, desc: 'Silný vietor mení smer každý ťah - počítaj s ním pri mierení.' },
   armor:    { icon: '🛡', name: 'Obrnení nájazdníci',  pay: 1.3,  desc: 'Nepriatelia majú o 3 úrovne brnenia viac (výdržnejší).' },
@@ -2094,7 +2094,7 @@ function beginTurn(i) {
   rollWind();                                              // vietor sa mení každý ťah
   const mid = dungeon.active && dungeon.mod && dungeon.mod.id;
   if (mid === 'storm') wind = (Math.random() < 0.5 ? -1 : 1) * Math.round(rand(55, 85));
-  if (mid === 'shield' && t.team === 1 && t.shieldMax && t.shield < t.shieldMax) { t.shield = Math.min(t.shieldMax, t.shield + Math.ceil(t.shieldMax * 0.3)); floatText(t.x, t.y - 90, '+ŠTÍT', '#8cf'); }
+  if (mid === 'shield' && t.team === 1 && t.shieldMax && t.shield < t.shieldMax) { t.shield = Math.min(t.shieldMax, t.shield + Math.ceil(t.shieldMax * 0.12)); floatText(t.x, t.y - 90, '+ŠTÍT', '#8cf'); }
   if (mid === 'rockfall') {   // salva kameňov; polovicu času mieri na niektorý živý tank
     const live = tanks.filter(o => !o.dead), tg = Math.random() < 0.5 && live.length ? live[Math.floor(Math.random() * live.length)].x + rand(-120, 120) : rand(100, WORLD_W - 100);
     strikes.push({ x: clamp(tg, 60, WORLD_W - 60), t: 1.8, n: 3, owner: -1 });
@@ -2193,7 +2193,7 @@ function startPlay() {
   hide('shop'); state = 'play';
   beginTurn((round - 1) % tanks.length);   // začína postupne každý hráč
   banner(biome().icon + ' ' + biome().name + ' · KOLO ' + round + ' – ' + tanks[turnIdx].name + ' začína!', 1600);
-  if (dungeon.active && dungeon.mod) setTimeout(() => banner(dungeonModTag() + ': ' + dungeon.mod.desc, 3400), 1900);
+  if (dungeon.active && dungeon.mod) { const m0 = dungeon.mod; setTimeout(() => { if (dungeon.active && dungeon.mod === m0) banner(m0.icon + ' ' + m0.name + ': ' + m0.desc, 3400); }, 1900); }   // poschodie sa mohlo medzitým zmeniť/skončiť
   if (net.active) netPublish();
 }
 function checkRoundEnd() {
