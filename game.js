@@ -2504,10 +2504,11 @@ function blocked(t, nx) {
   return obstacles.some(o => nx + 22 > o.x && nx - 22 < o.x + o.w && obTop(o) < t.y - 4);
 }
 const dustCol = () => ({ desert: 'rgba(225,195,140,.55)', winter: 'rgba(240,246,252,.6)', mountains: 'rgba(160,160,170,.5)' }[biomeKey] || 'rgba(150,125,90,.5)');
-function swallowed(t) {   // tank sa "prepadol do zabudnutia": zničený, až keď pod spodným okrajom arény zmizne 2/3 trupu, alebo - ak má zdvihnutú hlaveň - celá hlaveň
-  const h = t.artPivotH || 33, m = muzzle(t);
-  if (m.y < t.y - h) return m.y >= H;   // zdvihnutá hlaveň (koniec je nad trupom) musí zájsť celá
-  return t.y - H >= h * 2 / 3;
+function swallowed(t) {   // tank sa "prepadol do zabudnutia", keď je pod spodným okrajom arény (H) aspoň 2/3 dĺžky HLAVNE - nie trupu; závisí teda od elevácie:
+  // pri zdvihnutej hlavni musí tank zájsť hlbšie, vodorovná hlaveň zmizne naraz celá
+  const p = pivot(t), m = muzzle(t), lo = Math.min(p.y, m.y), hi = Math.max(p.y, m.y);
+  const below = hi <= H ? 0 : lo >= H ? 1 : (hi - H) / (hi - lo);   // podiel dĺžky hlavne pod okrajom
+  return below >= 2 / 3;
 }
 function updateTank(t, dt) {
   if (t.dead) return;
