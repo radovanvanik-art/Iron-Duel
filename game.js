@@ -242,6 +242,7 @@ const ctx = cv.getContext('2d');
 const M = 40;                                    // rezerva okolo scény kvôli trasenie obrazovky (vodorovne)
 let VM = M;                                       // zvislá rezerva vrstiev oblohy/terénu - pri oddialenej kamere (veľká mapa) treba vidieť viac aj nahor/nadol, nielen do strán
 let gfx = 'auto', quality = 2, SCALE = Math.min(2, window.devicePixelRatio || 1), MAXP = 700;
+let SAFE_TOP = 0, SAFE_LEFT = 0;   // o koľko logických px je zhora/zľava odrezaný viditeľný canvas pri "cover" doskalovaní (landscape bez čiernych pruhov) - HUD sa o toto posúva, nech ho orez nezožerie
 let skyL = null, terL = null, scorchL = null, vigL = null, terDirty = true, skyDirty = true, specks = [], stars = [], skyIsDark = false;
 let showFps = false, fpsEma = 16.7;
 const sprites = {};
@@ -2892,7 +2893,7 @@ function drawHud() {
   if (state === 'menu') return;
   const n = tanks.length, hw = Math.min(300, (W - 40 - (n - 1) * 24) / n), hgap = (W - 40 - n * hw) / (n - 1);
   tanks.forEach((t, i) => {
-    const w = hw, x = 20 + i * (hw + hgap), y = 16, bw = w - 24;
+    const w = hw, x = 20 + SAFE_LEFT + i * (hw + hgap), y = 16 + SAFE_TOP, bw = w - 24;
     const act = state === 'play' && i === turnIdx;
     ctx.save();
     ctx.shadowColor = 'rgba(0,0,0,.5)'; ctx.shadowBlur = act ? 18 : 10; ctx.shadowOffsetY = 4;
@@ -2952,10 +2953,10 @@ function drawHud() {
   ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.font = 'bold 26px system-ui';
   drawAmmoMenu(hw, hgap);
   const off = n === 2 ? 0 : 78;
-  if (n === 2) ctx.fillText(tanks[0].wins + '  :  ' + tanks[1].wins, W / 2, 42);
+  if (n === 2) ctx.fillText(tanks[0].wins + '  :  ' + tanks[1].wins, W / 2, 42 + SAFE_TOP);
   ctx.font = '13px system-ui'; ctx.fillStyle = 'rgba(255,255,255,.7)';
-  ctx.fillText('KOLO ' + round + ' · do ' + WIN_ROUNDS + ' víťazstiev · ' + biome().icon + ' ' + biome().name, W / 2, 62 + off);
-  const wx = W / 2, wy = 84 + off, wl = clamp(wind, -120, 120) * 0.66, B = biome();
+  ctx.fillText('KOLO ' + round + ' · do ' + WIN_ROUNDS + ' víťazstiev · ' + biome().icon + ' ' + biome().name, W / 2, 62 + off + SAFE_TOP);
+  const wx = W / 2, wy = 84 + off + SAFE_TOP, wl = clamp(wind, -120, 120) * 0.66, B = biome();
   ctx.fillText('VIETOR ' + Math.abs(wind) + (B.gust >= 0.9 ? ' · víchrica (mení smer)' : B.gust >= 0.5 ? ' · nárazový' : '') + (B.altWind ? ' · vo výške silnejší' : ''), wx, wy + 14);
   ctx.strokeStyle = '#9fd0ff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(wx, wy - 4); ctx.lineTo(wx + wl * 0.8, wy - 4); ctx.stroke();
   if (wl) { const d = Math.sign(wl); ctx.beginPath(); ctx.moveTo(wx + wl * 0.8, wy - 4); ctx.lineTo(wx + wl * 0.8 - d * 8, wy - 9); ctx.lineTo(wx + wl * 0.8 - d * 8, wy + 1); ctx.fillStyle = '#9fd0ff'; ctx.fill(); }
@@ -2964,7 +2965,7 @@ function drawHud() {
     ctx.font = 'bold 16px system-ui'; ctx.textAlign = 'center';
     const low = turnPhase === 'aim' && turnTimer <= 5;
     ctx.fillStyle = low && Math.floor(time * 4) % 2 ? '#ff4d3c' : t.color;
-    ctx.fillText('NA RADE: ' + t.name + (turnPhase === 'aim' ? ' · ' + Math.max(0, Math.ceil(turnTimer)) + ' s' : ''), W / 2, 116 + off);
+    ctx.fillText('NA RADE: ' + t.name + (turnPhase === 'aim' ? ' · ' + Math.max(0, Math.ceil(turnTimer)) + ' s' : ''), W / 2, 116 + off + SAFE_TOP);
   }
 }
 
@@ -3088,7 +3089,7 @@ function buy(p, id) {
   tone(800, 1200, 0.08, 'triangle', 0.06);
   renderShop();
 }
-$('shop').addEventListener('click', e => {
+$('shop').addEventListener('click', e => { try {
   const tab = e.target.closest('[data-tab]');
   if (net.spectator && tab) { shopPlayer = +tab.dataset.tab; renderShop(); return; }   // divák si smie prezerať výzbroj ktoréhokoľvek hráča, len nič nekupuje
   if (net.active && !netIsMine()) return;   // pasívne zariadenie nič nemení
@@ -3109,7 +3110,7 @@ $('shop').addEventListener('click', e => {
   }
   const row = e.target.closest('[data-buy]');
   if (row) { if (net.active && +row.dataset.p !== net.myIdx) return; buy(+row.dataset.p, row.dataset.buy); }
-});
+} catch (e) { reportCrash('klik v obchode (START/kúpa)', e); } });
 let dlgYes = null;   // vlastný potvrdzovací dialóg (okná confirm() sa v niektorých prehliadačoch a vložených stránkach nezobrazujú)
 function ask(text, onYes) { $('dlgText').textContent = text; dlgYes = onYes; show('dialog'); }
 $('dlgYes').addEventListener('click', () => { hide('dialog'); const f = dlgYes; dlgYes = null; if (f) f(); });
@@ -3706,16 +3707,24 @@ cv.addEventListener('pointermove', e => { if (e.pointerType === 'mouse') { mouse
 // zmena veľkosti (celá obrazovka bez okrajov, aj keď mobil skryje/zobrazí lištu prehliadača)
 function resize() {
   const vv = window.visualViewport, vw = (vv && vv.width) || innerWidth, vh = (vv && vv.height) || innerHeight;
+  // mobilný Safari: position:fixed prvky sa inak sizujú podľa CELEJ (veľkej) layout viewport, aj keď je viditeľná len menšia časť
+  // (adresný riadok prekrýva vrch) - #stage preto natvrdo prisadíme na skutočný viditeľný obdĺžnik (visualViewport), inak sa HUD hore
+  // schová POD lištu prehliadača úplne nezávisle od "cover" orezu nižšie
+  if (vv) { const st = $('stage'); st.style.left = vv.offsetLeft + 'px'; st.style.top = vv.offsetTop + 'px'; st.style.width = vw + 'px'; st.style.height = vh + 'px'; }
   // na šírku (bežná hracia poloha) vyplní celú obrazovku bez čiernych pruhov (mierne orezané hore/dole);
   // na výšku radšej nič neoreže (vľavo/vpravo je HUD aj ovládanie), takže tam ostáva doskalovanie na celú šírku/výšku bez orezu
   const s = vw >= vh ? Math.max(vw / W, vh / H) : Math.min(vw / W, vh / H);
   cv.style.width = Math.ceil(W * s) + 'px'; cv.style.height = Math.ceil(H * s) + 'px';
+  // "cover" doskalovanie v landscape (vyššie) necháva presahovať canvas mimo viditeľnej oblasti - o toľko (v logických px) treba posunúť HUD,
+  // nech sa štítky života/sily/munície hore (a prípadne bočné prvky) nedostanú pod odrezanú hranu obrazovky
+  SAFE_TOP = Math.min(160, Math.max(0, (H * s - vh) / (2 * s)));
+  SAFE_LEFT = Math.min(160, Math.max(0, (W * s - vw) / (2 * s)));
   positionPads();
   if (GLOBE.canvas) globeResize();
 }
 addEventListener('resize', resize);
 addEventListener('orientationchange', () => setTimeout(resize, 250));
-if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
+if (window.visualViewport) { window.visualViewport.addEventListener('resize', resize); window.visualViewport.addEventListener('scroll', resize); }
 resize();
 
 // ---------- hlavná slučka ----------
@@ -3757,18 +3766,29 @@ function menuFleetEl() {   // zakaždým trochu iné rozostavenie tankov, nech o
   else { setup.players[0].nick = null; refreshStoryProgressSource(); renderLogin(); }
 })();
 let last = performance.now(), slowMs = 0;
+// diagnostika nestability (hlásené: "občas to hodí hráča späť do menu") - zatiaľ sa to nepodarilo reprodukovať/nájsť v kóde,
+// takže namiesto tichého zamrznutia snímky pri neošetrenej chybe ju zachytíme, zalogujeme CELÝ stack do konzoly a ukážeme
+// viditeľný banner (nech má hráč čo poslať/odfotiť) - a slučka beží ďalej namiesto úplného zamrznutia hry.
+function reportCrash(where, e) {
+  console.error('[Iron Duel] neošetrená chyba v ' + where + ':', e);
+  try { banner('⚠️ CHYBA (' + where + '): ' + (e && e.message ? e.message : e) + ' — urob screenshot a pošli vývojárovi', 6000); } catch (_) {}
+}
 function loop(now) {
   const raw = Math.min(now - last, 100), dt = Math.min(0.033, raw / 1000); last = now;
-  if (net.active && !netIsMine()) { updateCamera(dt); draw(); netUpdateWaitBanner(); requestAnimationFrame(loop); return; }
-  netUpdateWaitBanner();
-  update(dt); draw();
-  fpsEma += (raw - fpsEma) * 0.05;
-  if (gfx === 'auto' && !paused && document.visibilityState === 'visible') {   // adaptívna kvalita
-    slowMs = fpsEma > 30 ? slowMs + raw : 0;
-    if (slowMs > 2500 && quality > 0) { setQuality(quality - 1); genArenaKeepLook(); slowMs = 0; fpsEma = 16.7; }
-  }
+  try {
+    if (net.active && !netIsMine()) { updateCamera(dt); draw(); netUpdateWaitBanner(); requestAnimationFrame(loop); return; }
+    netUpdateWaitBanner();
+    update(dt); draw();
+    fpsEma += (raw - fpsEma) * 0.05;
+    if (gfx === 'auto' && !paused && document.visibilityState === 'visible') {   // adaptívna kvalita
+      slowMs = fpsEma > 30 ? slowMs + raw : 0;
+      if (slowMs > 2500 && quality > 0) { setQuality(quality - 1); genArenaKeepLook(); slowMs = 0; fpsEma = 16.7; }
+    }
+  } catch (e) { reportCrash('hlavná slučka (state=' + state + ')', e); }
   requestAnimationFrame(loop);
 }
+window.addEventListener('error', e => reportCrash('window.onerror', e.error || e.message));
+window.addEventListener('unhandledrejection', e => reportCrash('unhandled promise', e.reason));
 function genArenaKeepLook() { skyDirty = terDirty = true; }
 if ('serviceWorker' in navigator && window.isSecureContext && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) navigator.serviceWorker.register('sw.js').catch(() => {});
 requestAnimationFrame(loop);

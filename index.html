@@ -297,16 +297,23 @@
 
   /* ---------- ilustrované pozadie prihlásenia / domovskej obrazovky / nastavenia / kreditov / zápasu ---------- */
   .hub.overlay{background:transparent;padding:0;align-items:flex-start}
-  .menuBg{position:fixed;inset:0;z-index:0;overflow:hidden;background:#0a1030;background-size:cover;background-position:center}
+  .menuBg{position:fixed;inset:0;z-index:0;overflow:hidden;background:#0a1030}
   .menuBg svg{width:100%;height:100%;display:block}
-  .menuBg::after{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at 50% 38%,rgba(6,9,18,.15),rgba(5,7,14,.72) 72%),linear-gradient(180deg,rgba(5,7,14,.25),rgba(5,7,14,.55) 70%,rgba(5,7,14,.8))}
-  /* AI-generovaný (Hugging Face) interiér veliteľskej kabíny tanku - pozadie všetkých obrazoviek menu (prihlásenie, domov, nastavenia, kredity, odznaky, vylepšenia, priatelia, výber zápasu, tutoriál) */
-  .hub .menuBg{background-image:url('assets/menu-cockpit.jpg')}
+  /* AI-generovaný (Hugging Face) interiér veliteľskej kabíny tanku - pozadie všetkých obrazoviek menu (prihlásenie, domov, nastavenia, kredity, odznaky, vylepšenia, priatelia, výber zápasu, tutoriál).
+     Farebne doladené (duotone filter) na modro-oceľovú HUD paletu hry namiesto surovej fotorealistickej fotky - samostatná ::before vrstva, aby filter nezasiahol scan-lines/vinetu v ::after. */
+  .menuBg::before{content:"";position:absolute;inset:-2%;background-size:cover;background-position:center}
+  .hub .menuBg::before{background-image:url('assets/menu-cockpit.jpg');filter:saturate(.5) sepia(.5) hue-rotate(179deg) saturate(1.9) brightness(.88) contrast(1.15)}
+  /* tmavá vinieta + jemné HUD scan-lines + modrý okrajový záblesk (v samostatnej, nefiltrovanej vrstve nad fotkou) */
+  .menuBg::after{content:"";position:absolute;inset:0;background:
+      radial-gradient(ellipse at 50% 36%,rgba(10,16,30,.1),rgba(6,10,20,.6) 72%),
+      linear-gradient(180deg,rgba(6,10,20,.16),rgba(5,8,16,.4) 68%,rgba(5,8,16,.72)),
+      repeating-linear-gradient(180deg,rgba(110,180,255,.05) 0px,rgba(110,180,255,.05) 1px,transparent 2px,transparent 4px),
+      linear-gradient(90deg,rgba(62,139,255,.12),transparent 9%,transparent 91%,rgba(62,139,255,.12))}
   .menuFleet{position:absolute;left:0;right:0;bottom:0;height:14vh;min-height:90px;max-height:170px;pointer-events:none;overflow:hidden}
   .menuFleet img{position:absolute;bottom:-2%;opacity:.5;filter:brightness(.62) saturate(.85) drop-shadow(0 6px 8px rgba(0,0,0,.55))}
   @media (max-width:640px){.menuFleet{display:none}}
-  .hub .card{position:relative;z-index:1;background:linear-gradient(175deg,rgba(18,23,38,.78),rgba(9,12,22,.72));backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
-    border:1px solid rgba(255,213,74,.22);box-shadow:0 24px 60px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.05) inset,0 1px 0 rgba(255,255,255,.08) inset;
+  .hub .card{position:relative;z-index:1;background:linear-gradient(175deg,rgba(20,28,46,.68),rgba(10,14,24,.64));backdrop-filter:blur(10px) saturate(1.5);-webkit-backdrop-filter:blur(10px) saturate(1.5);
+    border:1px solid rgba(255,213,74,.22);box-shadow:0 24px 60px rgba(0,0,0,.55),0 0 26px rgba(62,139,255,.14),0 0 0 1px rgba(255,255,255,.05) inset,0 1px 0 rgba(255,255,255,.08) inset;
     animation:cardIn .45s cubic-bezier(.2,.8,.3,1) both}
   @keyframes cardIn{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
   @keyframes endPop{from{opacity:0;transform:scale(.75)}60%{opacity:1;transform:scale(1.06)}to{transform:scale(1)}}
@@ -781,4 +788,4 @@
     window.__firestoreDb = firebase.firestore();
   } catch (_) { /* mimo web hostingu (napr. Claude Artifact) - použije sa záložné window.claude db */ }
 </script>
-<script src="game.js?v=28"></script>
+<script src="game.js?v=31"></script>
