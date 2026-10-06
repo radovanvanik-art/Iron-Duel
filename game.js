@@ -199,8 +199,12 @@ const BIOMES = {
   venus: { name: 'Venuša', icon: '🟠', windMul: 1.7, gust: 0.95, drag: 0.1, grav: 1.1, crater: 0.9, move: 0.65, fuel: 1.5, ice: false, bounce: 0.6, altWind: 0.1, obst: 0.5,
     sky: ['#2a1806', '#8a5a1a', '#e8b84a'], hills: ['#4a2e0e', '#5e3a14', '#72481c'], ground: ['#8a5a1e', '#6a4214', '#3a260c'], edge: '#f0c050', gtop: 330, gmid: 0.12, sun: '#ffd878', weather: 'dust',
     desc: 'Hustá toxická atmosféra: najsilnejší a najstálejší vietor spomedzi všetkých planét, vysoký tlak skracuje dolet a extrémna horúčava spomaľuje jazdu aj spotrebúva o 50 % viac paliva.' },
+  // podzemný bióm režimu Dungeon (pozri nižšie) - tiež mimo náhodného výberu rýchleho zápasu; cave:true potlačí slnko/mraky/hviezdy nad "oblohou" z hliny
+  dungeon: { name: 'Dungeon', icon: '⛏', windMul: 0, gust: 0, drag: 0.02, grav: 1, crater: 1.3, move: 0.8, fuel: 1, ice: false, bounce: 0.6, altWind: 0, obst: 0.92, cave: true,
+    sky: ['#1a1008', '#2a1c10', '#3a2a18'], hills: ['#120c06', '#1c140a', '#28200e'], ground: ['#4a3420', '#36240f', '#1c1208'], edge: '#6b4a28', gtop: 330, gmid: 0.12, sun: '#000000', weather: 'dust',
+    desc: 'Podzemná tma bez vetra - jediné nebezpečenstvo je tvoj vlastný výbuch v tesnej chodbe. Veľa prekážok, žiadny únik nabok.' },
 };
-const BIOME_KEYS = Object.keys(BIOMES).filter(k => k !== 'moon' && k !== 'mars' && k !== 'venus');   // mimozemské biómy sú len pre kampaň, nie pre náhodný výber v rýchlom zápase
+const BIOME_KEYS = Object.keys(BIOMES).filter(k => k !== 'moon' && k !== 'mars' && k !== 'venus' && k !== 'dungeon');   // mimozemské biómy + Dungeon sú mimo náhodného výberu rýchleho zápasu
 const missionWorld = m => m.terrain === 'moon' ? 'moon' : m.terrain === 'mars' ? 'mars' : m.terrain === 'venus' ? 'venus' : 'earth';
 const WORLD_META = { earth: { name: 'Zem', icon: '🌍' }, moon: { name: 'Mesiac', icon: '🌑' }, mars: { name: 'Mars', icon: '🔴' }, venus: { name: 'Venuša', icon: '🟠' } };
 let biomeKey = 'meadow';
@@ -335,7 +339,7 @@ const NICK_RE = /^[\p{L}\p{N}][\p{L}\p{N} _.\-]{1,13}$/u;
 let profiles = {};
 try { const v = JSON.parse(localStorage.getItem(PROF_KEY)); if (v && typeof v === 'object' && !Array.isArray(v)) profiles = v; } catch (_) {}
 const nickKey = str => 'n_' + str.trim().toLowerCase();      // predpona chráni pred kľúčmi ako __proto__
-const newProfile = (nick, color) => ({ nick, color, created: Date.now(), matches: 0, wins: 0, rounds: 0, kills: 0, bestLevel: 1, level: 1, xp: 0, last: 0, storyLoadout: null, story: null, achievements: [], perks: {} });
+const newProfile = (nick, color) => ({ nick, color, created: Date.now(), matches: 0, wins: 0, rounds: 0, kills: 0, bestLevel: 1, level: 1, xp: 0, last: 0, storyLoadout: null, story: null, dungeon: null, achievements: [], perks: {} });
 
 // ---------- veliteľské vylepšenia (trvalý "skill tree" naprieč všetkými zápasmi, mimo bežného výzbroje v obchode) ----------
 // Body sa NIKDE neukladajú samostatne - vždy sa dopočítajú z (najvyššia dosiahnutá hodnosť - 1) mínus už minuté, takže
@@ -924,10 +928,36 @@ function storyProgressForNick(nick) {   // postup kampane patrí k profilu prez�
   if (!p.story) { p.story = loadLegacyGlobalStoryProgress() || defaultStoryProgress(); saveProfiles(); }   // jednorazová migrácia starého spoločného postupu
   return p.story;
 }
+// ---------- postup režimu Dungeon (samostatný od kampane, ale ukladá sa rovnakým vzorom - pozri vyššie) ----------
+const DUNGEON_KEY = 'ironDuelDungeon_v1';   // záložné/hosťovské úložisko, rovnaký vzor ako STORY_KEY
+function defaultDungeonProgress() { return { floor: 1, best: 1 }; }
+function loadLegacyGlobalDungeonProgress() {
+  try {
+    const v = JSON.parse(localStorage.getItem(DUNGEON_KEY));
+    if (v && typeof v === 'object') return { floor: clampInt(v.floor, 1, 999999, 1), best: clampInt(v.best, 1, 999999, 1) };
+  } catch (_) {}
+  return null;
+}
+function dungeonProgressForNick(nick) {
+  const key = nickKey(nick);
+  const p = Object.prototype.hasOwnProperty.call(profiles, key) ? profiles[key] : (profiles[key] = newProfile(nick, PALETTE[0]));
+  if (!p.dungeon) { p.dungeon = loadLegacyGlobalDungeonProgress() || defaultDungeonProgress(); saveProfiles(); }
+  return p.dungeon;
+}
+let dungeon = { active: false, progress: null };
+function refreshDungeonProgressSource() {
+  const nick = setup.players[0].nick;
+  dungeon.progress = nick ? dungeonProgressForNick(nick) : (loadLegacyGlobalDungeonProgress() || defaultDungeonProgress());
+}
+function saveDungeonProgress() {
+  if (setup.players[0].nick) { saveProfiles(); return; }   // dungeon.progress JE priamo profiles[key].dungeon
+  try { localStorage.setItem(DUNGEON_KEY, JSON.stringify(dungeon.progress)); } catch (_) {}
+}
 let story = { active: false, idx: null, progress: null };
-function refreshStoryProgressSource() {   // volať vždy po zmene prihlásenia hráča v slote 0 - kampaň patrí aktuálne prihlásenému hráčovi
+function refreshStoryProgressSource() {   // volať vždy po zmene prihlásenia hráča v slote 0 - kampaň aj Dungeon patria aktuálne prihlásenému hráčovi
   const nick = setup.players[0].nick;
   story.progress = nick ? storyProgressForNick(nick) : (loadLegacyGlobalStoryProgress() || defaultStoryProgress());
+  refreshDungeonProgressSource();
   if (nick) {   // hráči, čo planétu dokončili ešte pred pridaním generálov, dostanú ich darček dodatočne (bez animácie dialógu, len potichu do výzbroje)
     const p = getProfile(nick);
     if (p && catchUpWorldRewards(p)) { saveProfiles(); setTimeout(() => banner('🎖️ Generáli ti do výzbroje poslali darčeky za už dokončené planéty!', 3600), 600); }
@@ -1081,6 +1111,10 @@ const ACHIEVEMENTS = [
   { id: 'mars_dobyty', icon: '🔴', title: 'Mars dobytý', desc: 'Dokonči kampaň na Marse.', check: p => profileWorldUnlocked(p, 'venus') },
   { id: 'cela_kampan', icon: '🏆', title: 'Veliteľ slnečnej sústavy', desc: 'Dokonči celú kampaň - Zem, Mesiac, Mars aj Venušu.', check: p => !!p.story && p.story.unlocked >= STORY_MISSIONS.length },
   { id: 'vytrvalec', icon: '⏱️', title: 'Vytrvalec', desc: 'Odohraj 150 kôl.', check: p => p.rounds >= 150 },
+  { id: 'dungeon_5', icon: '🕯️', title: 'Prieskumník dungeonu', desc: 'Dosiahni 5. poschodie Dungeonu.', check: p => !!p.dungeon && p.dungeon.best >= 5 },
+  { id: 'dungeon_boss1', icon: '👹', title: 'Lovec bossov', desc: 'Zraz prvého bossa Dungeonu.', check: p => !!p.dungeon && p.dungeon.best >= 6 },
+  { id: 'dungeon_10', icon: '⛏️', title: 'Baník', desc: 'Dosiahni 10. poschodie Dungeonu.', check: p => !!p.dungeon && p.dungeon.best >= 10 },
+  { id: 'dungeon_25', icon: '💣', title: 'Hlbinný veliteľ', desc: 'Dosiahni 25. poschodie Dungeonu.', check: p => !!p.dungeon && p.dungeon.best >= 25 },
 ];
 function checkAchievements(nick) {   // zavolá sa po každej zmene štatistík - potichu odomkne nové odznaky a ukáže banner
   if (!nick) return;
@@ -1365,6 +1399,12 @@ function renderStoryList() {
 }
 $('homeStoryBtn').addEventListener('click', () => { hide('home'); focusFrontierWorld(); renderStoryList(); show('story'); });
 $('storyClose').addEventListener('click', () => { stopGlobeLoop(); hide('story'); show('home'); });
+$('homeDungeonBtn').addEventListener('click', () => { hide('home'); renderDungeonScreen(); show('dungeon'); });
+$('dungeonClose').addEventListener('click', () => { hide('dungeon'); show('home'); });
+$('dungeonEnterBtn').addEventListener('click', () => startDungeon());
+$('dungeonNextBtn').addEventListener('click', () => dungeonEnterFloor());
+$('dungeonRetryBtn').addEventListener('click', () => dungeonEnterFloor());
+$('dungeonExitBtn').addEventListener('click', () => { hide('end'); toMenu(); });
 function showStoryDetail(i) {
   const m = STORY_MISSIONS[i];
   $('storyDetail').innerHTML = '<b>' + worldLocalNum(i) + '. ' + esc(m.title) + '</b><br>' + esc(storyMissionSub(m)) + '<br>' + esc(m.text);
@@ -1651,7 +1691,7 @@ function makeTank(id, cfg) {
   cfg = cfg || setup.players[id];
   const prof = cfg.nick ? getProfile(cfg.nick) : null;   // prihlásený hráč pokračuje na svojej uloženej veliteľskej hodnosti (level/XP)
   return {
-    id, color: cfg.color, name: cfg.name, nick: cfg.nick || null, kills: 0, artPivotH: tankArtPivotH(cfg.color),
+    id, team: cfg.team != null ? cfg.team : id, color: cfg.color, name: cfg.name, nick: cfg.nick || null, kills: 0, artPivotH: tankArtPivotH(cfg.color),
     money: START_MONEY + 100 * perkRank(prof, 'cash'), ammo: Object.fromEntries(ORDER.map(k => [k, k === 'ap' ? Infinity : 0])), bot: cfg.bot | 0, botSt: null, hudRects: [],
     speedLvl: 0, armorLvl: perkRank(prof, 'armor'), fuelLvl: perkRank(prof, 'fuel'), wlv: Object.fromEntries(WLV_IDS.map(k => [k, 0])), wins: 0, streak: 0,
     level: prof ? clampInt(prof.level, 1, MAX_LEVEL, 1) : 1, xp: prof ? Math.max(0, +prof.xp || 0) : 0, shields: new Array(10).fill(0), shT: 0, shieldMax: 0,
@@ -1712,7 +1752,7 @@ function genArena(key) {
   biomeKey = key; const B = BIOMES[key];
   const T = [noiseTbl(), noiseTbl(), noiseTbl(), noiseTbl()], off = rand(0, 30);
   const nz = (k, per, x) => vnoise(T[k], x / per + off);
-  const prm = { meadow: [475, 100, 520, 46, 210, 14, 85], desert: [500, 92, 620, 40, 260, 9, 95], winter: [480, 100, 560, 46, 240, 10, 95], forest: [470, 92, 480, 42, 190, 10, 75], canyon: [470, 120, 540, 55, 220, 14, 90], swamp: [470, 55, 600, 26, 260, 8, 55], volcano: [460, 105, 500, 48, 200, 12, 90], beach: [500, 55, 560, 22, 240, 8, 65], ruins: [475, 90, 480, 50, 200, 16, 80], moon: [475, 85, 460, 55, 190, 22, 65], mars: [480, 95, 520, 46, 220, 13, 85] }[key];
+  const prm = { meadow: [475, 100, 520, 46, 210, 14, 85], desert: [500, 92, 620, 40, 260, 9, 95], winter: [480, 100, 560, 46, 240, 10, 95], forest: [470, 92, 480, 42, 190, 10, 75], canyon: [470, 120, 540, 55, 220, 14, 90], swamp: [470, 55, 600, 26, 260, 8, 55], volcano: [460, 105, 500, 48, 200, 12, 90], beach: [500, 55, 560, 22, 240, 8, 65], ruins: [475, 90, 480, 50, 200, 16, 80], moon: [475, 85, 460, 55, 190, 22, 65], mars: [480, 95, 520, 46, 220, 13, 85], dungeon: [480, 110, 300, 60, 140, 20, 60] }[key];
   for (let x = 0; x <= WORLD_W; x++) {
     let y;
     if (key === 'mountains') {   // hrebeňový šum = ostré štíty a hlboké údolia
@@ -1747,13 +1787,13 @@ function genArena(key) {
   const free = x => sx.every(q => Math.abs(x - q) > 95) && obstacles.every(o => x < o.x - 25 || x > o.x + o.w + 25);
   const put = (cnt, make) => { for (let i = 0, tries = 0; i < cnt && tries < cnt * 8; tries++) { const x = rand(20, WORLD_W - 20); if (!free(x)) continue; make(x, ground[Math.round(x)]); i++; } };
   if (B.trees) put(12 + Math.floor(Math.random() * 6), (x, y0) => trees.push({ x, y0, h: rand(62, 112), w: rand(34, 50) }));
-  const D = { meadow: [['bush', 12], ['rock', 4]], desert: [['cactus', 9], ['rock', 6]], winter: [['pine', 10], ['rock', 4]], forest: [['bush', 10], ['rock', 3]], mountains: [['pine', 8], ['rock', 8]], canyon: [['rock', 16]], swamp: [['bush', 15], ['rock', 3]], volcano: [['rock', 14]], beach: [['bush', 6], ['rock', 3]], ruins: [['rock', 22]], moon: [['rock', 20]], mars: [['rock', 12]] }[key];
+  const D = { meadow: [['bush', 12], ['rock', 4]], desert: [['cactus', 9], ['rock', 6]], winter: [['pine', 10], ['rock', 4]], forest: [['bush', 10], ['rock', 3]], mountains: [['pine', 8], ['rock', 8]], canyon: [['rock', 16]], swamp: [['bush', 15], ['rock', 3]], volcano: [['rock', 14]], beach: [['bush', 6], ['rock', 3]], ruins: [['rock', 22]], moon: [['rock', 20]], mars: [['rock', 12]], dungeon: [['rock', 28]] }[key];
   D.forEach(([type, cnt]) => put(cnt, (x, y0) => { if (key === 'mountains' && type === 'pine' && y0 < 430) return; decor.push({ type, x, y0, s: rand(0.7, 1.3) }); }));
 
   hills = [];
   for (let i = 0; i < 3; i++) hills.push({ a: rand(40, 90) * (key === 'mountains' ? 1.7 : 1), f: rand(0.002, 0.006), p: rand(0, 6.28), base: 380 + i * 25, col: B.hills[i] });
   clouds = [];
-  for (let i = 0; i < 6; i++) clouds.push({ x: rand(0, WORLD_W), y: rand(40, 220), s: rand(0.6, 1.4) });
+  if (!B.cave) for (let i = 0; i < 6; i++) clouds.push({ x: rand(0, WORLD_W), y: rand(40, 220), s: rand(0.6, 1.4) });
   sun = { x: rand(WORLD_W * 0.172, WORLD_W * 0.828), y: rand(125, 200) };
   weather = [];
   const wn = { snow: 130, dust: 70, leaf: 38, mist: 9, pollen: 26 }[B.weather] || 0;
@@ -1837,9 +1877,57 @@ function continueGame() {
 function toMenu() {
   paused = false; state = 'menu';
   story.active = false; story.idx = null; document.body.classList.remove('storymode');
+  dungeon.active = false; document.body.classList.remove('dungeonmode');
   if (net.active) netLeave();   // odhlás sa z odberu izby, nech sa nezbiera "duch" pripojenia po návrate domov (platí pre hráča aj diváka)
-  ['shop', 'end', 'pause', 'story', 'menu'].forEach(hide); $('banner').style.display = 'none';
+  ['shop', 'end', 'pause', 'story', 'dungeon', 'menu'].forEach(hide); $('banner').style.display = 'none';
   refreshContinue(); renderSetup(); renderHome(); show('home');
+}
+// ---------- režim Dungeon: podzemné poschodia proti botom, naposledy stojaci tím vyhráva, nekonečná veža s bossom každých 5 poschodí ----------
+const DUNGEON_BOSS_NAMES = ['👹 Krtko Obor', '👹 Pán Štôlne', '👹 Jadro Hory', '👹 Žeravý Tyran', '👹 Posledný Strážca'];
+function dungeonBotCount(floor, boss) { return boss ? 1 : Math.min(4, 1 + Math.floor((floor - 1) / 3)); }
+function dungeonBotLevel(floor, boss) { return boss ? 3 : clampInt(1 + Math.floor((floor - 1) / 4), 1, 3); }
+function buildDungeonEnemies(floor, startId) {
+  const boss = floor % 5 === 0, n = dungeonBotCount(floor, boss), lvl = dungeonBotLevel(floor, boss);
+  const used = new Set(tanks.map(t => t.color.toLowerCase())), out = [];
+  for (let i = 0; i < n; i++) {
+    const color = PALETTE.find(c => !used.has(c.toLowerCase())) || PALETTE[(startId + i) % PALETTE.length];
+    used.add(color.toLowerCase());
+    const name = boss ? DUNGEON_BOSS_NAMES[Math.min(DUNGEON_BOSS_NAMES.length - 1, Math.floor(floor / 5) - 1)] : ('Nájazdník ' + (startId + i + 1));
+    const t = makeTank(startId + i, { name, color, nick: null, bot: lvl, team: 1 });
+    t.money = Math.round(420 + floor * 55 + (boss ? 700 : 0));
+    t.armorLvl = Math.min(6, Math.floor(floor / 4) + (boss ? 2 : 0));
+    botShop(t);
+    out.push(t);
+  }
+  return out;
+}
+function dungeonEnterFloor() {   // spoločné jadro pre vstup na poschodie - hráčov tank (peniaze, munícia, brnenie) sa NEVYTVÁRA nanovo,
+  // len sa k nemu domontujú noví (silnejší) nepriatelia pre aktuálne poschodie - výzbroj sa tak naprieč poschodiami hromadí
+  const humans = tanks.filter(t => t.team === 0);
+  tanks = humans.concat(buildDungeonEnemies(dungeon.progress.floor, humans.length));
+  tanks.forEach(t => t.wins = 0);   // "wins" musí byť na nulu na KAŽDOM poschodí (WIN_ROUNDS=1 rozhoduje poschodie), inak by starý počet z predošlého poschodia mýlil afterRoundEnd()
+  round = 1; lastResult = '';
+  buildPads(); enterShop();
+  hide('dungeon'); hide('menu'); hide('end'); hide('home');
+  const floor = dungeon.progress.floor;
+  $('shopTitle').textContent = '⛏ Dungeon · Poschodie ' + floor + (floor % 5 === 0 ? ' · 👹 BOSS' : '');
+}
+function startDungeon() {   // čerstvý vstup do Dungeonu (z domovskej obrazovky) - tu sa tank hráča vytvára nanovo so štartovacou výzbrojou
+  story.active = false; story.idx = null; document.body.classList.remove('storymode');
+  goFullscreen(); initAudio(); fixColors(); saveSetup();
+  setup.terrain = 'dungeon'; WIN_ROUNDS = 1; applyMapSize('normal');
+  dungeon.active = true; document.body.classList.add('dungeonmode');
+  // Dungeon je zatiaľ sólový režim (1 hráč proti botom) - nepreberá počet hráčov z nastavenia rýchleho zápasu (to by mohlo
+  // nečakane vyžadovať "hot-seat" striedanie viacerých ľudí pri jednom zariadení aj v Dungeone bez toho, aby si to hráč vybral)
+  tanks = [Object.assign(makeTank(0, setup.players[0]), { team: 0 })];
+  dungeonEnterFloor();
+}
+function renderDungeonScreen() {
+  const floor = dungeon.progress.floor, best = dungeon.progress.best, boss = floor % 5 === 0;
+  $('dungeonInfo').innerHTML = 'Aktuálne poschodie: <b>' + floor + '</b>' + (boss ? ' · 👹 poschodie bossa' : '') +
+    '<br>Najhlbšie dosiahnuté poschodie: <b>' + best + '</b>' +
+    '<br><small>Ty (a prípadne spoluhráči na tejto obrazovke) proti botom - prestrieľaj sa hlinou k súperom. Pozor: vlastný výbuch v tesnej chodbe zasiahne aj teba!</small>';
+  $('dungeonEnterBtn').textContent = '▶ Vstúpiť · Poschodie ' + floor;
 }
 function enterShop(resume) {
   genArena(pickBiome());
@@ -1963,18 +2051,23 @@ function startPlay() {
 function checkRoundEnd() {
   if (state !== 'play') return;
   const alive = tanks.filter(t => !t.dead);
-  if (alive.length > 1) return;
+  // tím = t.team; v bežnej FFA hre má každý tank svoj vlastný tím (team===id), takže "posledný tím" = "posledný tank" ako doteraz.
+  // Dungeon (a prípadne budúce tímové režimy) dá viacerým tankom rovnaké team, takže vyhráva posledná PREŽIVŠIA skupina, nie jednotlivec.
+  const aliveTeams = new Set(alive.map(t => t.team));
+  if (aliveTeams.size > 1) return;
   state = 'roundEnd'; endTimer = 3;
-  if (alive.length === 1) {
-    const w = alive[0], losers = tanks.filter(t => t !== w);
-    w.wins++; w.streak++; losers.forEach(l => l.streak = 0);
-    reward(w, WIN_BONUS + ROUND_SCALE * (round - 1), 'win');
-    reward(w, Math.round(w.hp / 2), 'hp');
-    if (w.streak >= 2) reward(w, STREAK_BONUS * (w.streak - 1), 'streak');
-    addXp(w, 150);
-    losers.forEach(l => { reward(l, LOSE_BONUS + ROUND_SCALE / 2 * (round - 1), 'lose'); addXp(l, 40); });
-    lastResult = 'víťaz kola: ' + w.name;
-    banner(w.name + ' vyhráva kolo!', 2800);
+  if (aliveTeams.size === 1) {
+    const winners = alive, losers = tanks.filter(t => t.dead);
+    winners.forEach(w => {
+      w.wins++; w.streak++;
+      reward(w, WIN_BONUS + ROUND_SCALE * (round - 1), 'win');
+      reward(w, Math.round(w.hp / 2), 'hp');
+      if (w.streak >= 2) reward(w, STREAK_BONUS * (w.streak - 1), 'streak');
+      addXp(w, 150);
+    });
+    losers.forEach(l => { l.streak = 0; reward(l, LOSE_BONUS + ROUND_SCALE / 2 * (round - 1), 'lose'); addXp(l, 40); });
+    lastResult = winners.length === 1 ? ('víťaz kola: ' + winners[0].name) : ('víťazný tím: ' + winners.map(w => w.name).join(', '));
+    banner(winners.length === 1 ? (winners[0].name + ' vyhráva kolo!') : 'Váš tím vyhráva kolo!', 2800);
   } else {
     tanks.forEach(t => { t.streak = 0; reward(t, LOSE_BONUS + ROUND_SCALE / 2 * (round - 1), 'lose'); addXp(t, 40); });
     lastResult = 'Remíza';
@@ -1992,7 +2085,27 @@ function afterRoundEnd() {
   const w = tanks.find(t => t.wins >= WIN_ROUNDS);
   if (w) {
     state = 'matchEnd'; clearSave(); hide('pause');
-    $('endNormalBtns').style.display = ''; $('endStoryBtns').style.display = 'none';
+    $('endNormalBtns').style.display = ''; $('endStoryBtns').style.display = 'none'; $('endDungeonBtns').style.display = 'none';
+    if (dungeon.active) {
+      const floor = dungeon.progress.floor, boss = floor % 5 === 0, won = w.team === 0;
+      if (won) {   // postup sa ukladá hneď po výhre (nie až po kliknutí "Ďalšie poschodie"), nech sa nestratí ani keď hráč potom odíde do menu
+        dungeon.progress.floor = floor + 1;
+        dungeon.progress.best = Math.max(dungeon.progress.best, dungeon.progress.floor);
+        saveDungeonProgress();
+      }
+      recordStats(won ? tanks.find(t => t.team === 0) : undefined);   // postup/odznaky Dungeonu sa počítajú do profilu rovnako ako kampaň
+      $('endTitle').textContent = won ? ('Poschodie ' + floor + ' vyčistené!' + (boss ? ' 👹' : '')) : ('Padli ste na poschodí ' + floor);
+      $('endTitle').style.color = won ? '#5fd35f' : '#e5484d';
+      $('endSub').innerHTML = won
+        ? (boss ? 'Boss zničený! Výťah sa posúva na ďalšie poschodie.' : 'Chodba je čistá - pokračuj hlbšie.')
+        : 'Skús to poschodie znova - čerstvá výzbroj aj postup zostávajú zachované.';
+      $('endNormalBtns').style.display = 'none'; $('endDungeonBtns').style.display = 'flex';
+      $('dungeonNextBtn').style.display = won ? '' : 'none';
+      $('dungeonRetryBtn').style.display = won ? 'none' : '';
+      $('end').classList.toggle('win', won); $('end').classList.toggle('lose', !won);
+      show('end'); if (net.active) netPublish();
+      return;
+    }
     if (story.active) {
       const m = STORY_MISSIONS[story.idx], won = w === tanks[0];
       let worldReward = null;
@@ -2458,7 +2571,7 @@ function buildSky() {
   const g = x.createLinearGradient(0, -VM, 0, H + VM);
   g.addColorStop(0, B.sky[0]); g.addColorStop(0.55, B.sky[1]); g.addColorStop(1, B.sky[2]);
   x.fillStyle = g; x.fillRect(-M, -VM, WORLD_W + 2 * M, H + 2 * VM);
-  skyIsDark = lum(B.sky[0]) < 0.25;   // hviezdy sa teraz kreslia animovane (blikanie + paralax) v drawSky(), nie sem natrvalo
+  skyIsDark = !B.cave && lum(B.sky[0]) < 0.25;   // hviezdy sa teraz kreslia animovane (blikanie + paralax) v drawSky(), nie sem natrvalo - v jaskyni (Dungeon) žiadne hviezdy
   if (biomeKey === 'winter') {   // polárna žiara
     for (let k = 0; k < 3; k++) {
       const ag = x.createLinearGradient(0, 40 + k * 30, 0, 230 + k * 30);
@@ -2468,9 +2581,11 @@ function buildSky() {
       x.lineTo(WORLD_W + M, 250 + k * 30); x.lineTo(-M, 250 + k * 30); x.closePath(); x.fill();
     }
   }
-  const sg = x.createRadialGradient(sun.x, sun.y, 4, sun.x, sun.y, 90);
-  sg.addColorStop(0, B.sun); sg.addColorStop(0.3, B.sun + 'cc'); sg.addColorStop(1, B.sun + '00');
-  x.fillStyle = sg; x.fillRect(sun.x - 100, sun.y - 100, 200, 200);
+  if (!B.cave) {
+    const sg = x.createRadialGradient(sun.x, sun.y, 4, sun.x, sun.y, 90);
+    sg.addColorStop(0, B.sun); sg.addColorStop(0.3, B.sun + 'cc'); sg.addColorStop(1, B.sun + '00');
+    x.fillStyle = sg; x.fillRect(sun.x - 100, sun.y - 100, 200, 200);
+  }
   hills.forEach(h => {
     const hg = x.createLinearGradient(0, h.base - h.a, 0, h.base + 140);
     hg.addColorStop(0, h.col); hg.addColorStop(1, shade(h.col, -28));

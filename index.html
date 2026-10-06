@@ -60,7 +60,7 @@
   }
   #fsBtn{position:fixed;top:2px;right:4px;z-index:6;border-radius:6px;border:1px solid rgba(255,255,255,.4);background:rgba(20,26,40,.7);color:#fff;font-size:15px;padding:3px 8px;cursor:pointer;touch-action:manipulation;display:none}
   body[data-state="play"] #fsBtn,body[data-state="roundEnd"] #fsBtn{display:block}
-  body.storymode #saveQuit{display:none}
+  body.storymode #saveQuit, body.dungeonmode #saveQuit{display:none}
   .mrow{border:2px solid var(--pc);border-radius:12px;padding:8px 12px;margin:6px 0;background:rgba(255,255,255,.03);display:flex;flex-direction:column;gap:2px;cursor:pointer;transition:background .12s ease,transform .12s ease,box-shadow .12s ease}
   .mrow.locked{opacity:.45;cursor:default}
   .mrow:not(.locked):hover{background:rgba(255,255,255,.08);transform:translateX(2px);box-shadow:0 4px 14px rgba(0,0,0,.3)}
@@ -541,6 +541,7 @@
       </button>
       <div class="panelGrid">
         <button class="panelBtn" id="homeStoryBtn"><span class="pIcon">🗺️</span><span class="pLabel">Kampaň</span></button>
+        <button class="panelBtn" id="homeDungeonBtn"><span class="pIcon">⛏️</span><span class="pLabel">Dungeon</span></button>
         <button class="panelBtn" id="homeOnlineBtn"><span class="pIcon">📡</span><span class="pLabel">Multiplayer</span></button>
         <button class="panelBtn" id="homeAchBtn"><span class="pIcon">🏅</span><span class="pLabel">Odznaky</span></button>
         <button class="panelBtn" id="homePerksBtn"><span class="pIcon">🎖️</span><span class="pLabel">Vylepšenia</span></button>
@@ -689,6 +690,15 @@
   </div>
 </div>
 
+<div id="dungeon" class="overlay">
+  <div class="card">
+    <h2>⛏ Dungeon</h2>
+    <p>Samostatný režim mimo kampane - nekonečná podzemná veža. Prestrieľaj sa hlinenými chodbami k súperom a zostaň posledný. Pozor: vlastný výbuch ťa v tesnej chodbe môže zasiahnuť rovnako ako súperov. Každých 5 poschodí čaká boss.</p>
+    <div id="dungeonInfo" class="storyDetail">Načítavam postup…</div>
+    <div class="row" style="margin-top:12px"><button class="btn" id="dungeonEnterBtn">▶ Vstúpiť</button><button class="btn alt" id="dungeonClose">Späť do menu</button></div>
+  </div>
+</div>
+
 <div id="online" class="overlay">
   <div class="card">
     <h2>🌐 Online duel (2-4 hráči)</h2>
@@ -719,6 +729,11 @@
       <button class="btn" id="storyNextBtn">Ďalšia misia ▶</button>
       <button class="btn alt" id="storyRetryBtn">Skúsiť znova</button>
       <button class="btn alt" id="storyBackBtn">Mapa misií</button>
+    </div>
+    <div class="row" style="justify-content:center;display:none" id="endDungeonBtns">
+      <button class="btn" id="dungeonNextBtn">Ďalšie poschodie ▶</button>
+      <button class="btn alt" id="dungeonRetryBtn">Skúsiť znova</button>
+      <button class="btn alt" id="dungeonExitBtn">Späť do menu</button>
     </div>
     <div class="row" style="justify-content:center;margin-top:6px"><button class="btn alt" id="endShareBtn">📸 Zdieľať výsledok</button></div>
   </div>
@@ -788,4 +803,4 @@
     window.__firestoreDb = firebase.firestore();
   } catch (_) { /* mimo web hostingu (napr. Claude Artifact) - použije sa záložné window.claude db */ }
 </script>
-<script src="game.js?v=31"></script>
+<script src="game.js?v=32"></script>
