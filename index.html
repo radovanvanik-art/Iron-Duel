@@ -282,6 +282,21 @@
   .swb{width:26px;height:26px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;touch-action:manipulation}
   .swb.sel{border-color:#fff;box-shadow:0 0 0 2px var(--pc)}
   .swb:disabled{opacity:.22;cursor:not-allowed}
+  #endLoot{margin:4px 0 12px}
+  #endLoot .lootHead{font-weight:800;letter-spacing:.06em;text-transform:uppercase;font-size:12px;color:#ffd54a;margin-bottom:8px}
+  #endLoot .lootRow{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+  #endLoot .lootItem{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:104px;max-width:140px;padding:10px 8px;border-radius:12px;background:rgba(255,255,255,.07);border:1px solid color-mix(in srgb,var(--c) 55%,transparent);animation:lootPop .5s cubic-bezier(.2,.9,.25,1.4) both}
+  #endLoot .lootItem.badge{background:linear-gradient(180deg,color-mix(in srgb,var(--c) 22%,transparent),rgba(255,255,255,.05));box-shadow:0 0 14px color-mix(in srgb,var(--c) 45%,transparent)}
+  #endLoot .lootItem b{font-size:13px;color:#fff;line-height:1.15}
+  #endLoot .lootItem small{font-size:11px;color:var(--c);font-weight:700}
+  #endLoot .lootIc{display:flex;align-items:center;justify-content:center;width:46px;height:46px;border-radius:50%;font-size:24px;background:radial-gradient(circle at 35% 30%,color-mix(in srgb,var(--c) 40%,#222),#12161f);border:2px solid var(--c)}
+  #endLoot .lootIc.ammo{font-size:15px;font-weight:900;color:var(--c)}
+  #endLoot .lootIc.art{width:74px;border-radius:12px;padding:4px}
+  #endLoot .lootIc.art img{width:100%;display:block}
+  @keyframes lootPop{from{opacity:0;transform:translateY(14px) scale(.6)}to{opacity:1;transform:none}}
+  .swb.boss{box-shadow:0 0 0 2px rgba(255,213,74,.55)}
+  .swb.locked{font-size:12px;line-height:1;opacity:.45;filter:grayscale(.6)}
+
   .cust{width:34px;height:28px;padding:0;border:0;background:none;cursor:pointer}
   #shopTop .row{gap:14px}
   @media (max-width:640px){.prow{grid-template-columns:auto 1fr auto}.prow .sw,.prow .hint{grid-column:1 / 4}}
@@ -724,6 +739,7 @@
 <div id="end" class="overlay">
   <div class="card" style="text-align:center">
     <h1 id="endTitle" style="animation:endPop .5s cubic-bezier(.2,.9,.25,1.3) both"></h1><p id="endSub"></p>
+    <div id="endLoot" style="display:none"></div>
     <div class="row" style="justify-content:center" id="endNormalBtns"><button class="btn" id="againBtn">Odveta</button><button class="btn alt" id="menuBtn">Do menu</button></div>
     <div class="row" style="justify-content:center;display:none" id="endStoryBtns">
       <button class="btn" id="storyNextBtn">Ďalšia misia ▶</button>
@@ -803,4 +819,4 @@
     window.__firestoreDb = firebase.firestore();
   } catch (_) { /* mimo web hostingu (napr. Claude Artifact) - použije sa záložné window.claude db */ }
 </script>
-<script src="game.js?v=32"></script>
+<script src="game.js?v=33"></script>

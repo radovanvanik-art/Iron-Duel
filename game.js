@@ -309,6 +309,12 @@ const held = [{}, {}, {}, {}];   // dotykové tlačidlá
 const kb = [{}, {}, {}, {}];     // klávesnica
 
 // ---------- nastavenie hráčov a uloženie hry ----------
+// farby tanku odomykané za bossov Dungeonu (floor = najhlbšie dosiahnuté poschodie potrebné na odomknutie; mimo PALETTE, takže ich boti nikdy nedostanú)
+const BOSS_COLORS = [
+  { id: 'obsidian', hex: '#3a3f4c', name: 'Obsidián', floor: 6,  how: 'Zraz bossa na 5. poschodí Dungeonu' },
+  { id: 'magma',    hex: '#ff3d00', name: 'Magma',    floor: 11, how: 'Zraz bossa na 10. poschodí Dungeonu' },
+  { id: 'platinum', hex: '#e8ecf4', name: 'Platina',  floor: 16, how: 'Zraz bossa na 15. poschodí Dungeonu' },
+];
 const PALETTE = ['#3e8bff', '#e5484d', '#3fbf5f', '#f2c230', '#b06cff', '#ff8a3d', '#2fd0c8', '#ff5fb0', '#9aa5b1', '#8bd450'];
 const KEYSETS = [
   { left: 'KeyA', right: 'KeyD', up: 'KeyW', down: 'KeyS', fire: 'KeyF', ammo: 'KeyG', pdown: 'KeyQ', pup: 'KeyE', hint: 'A D jazda · W S náklon · Q E sila · F streľba · G munícia' },
@@ -585,6 +591,8 @@ function clampInt(v, a, b, d) { v = parseInt(v, 10); return isNaN(v) ? d : Math.
 function fixColors() {   // každý hráč musí mať inú farbu
   const used = new Set();
   setup.players.forEach(p => {
+    const bc = BOSS_COLORS.find(c => c.hex === String(p.color).toLowerCase());   // zamknutú farbu bossa (iný účet / zmazaný postup) vráť na bežnú
+    if (bc && !bossColorUnlocked(bc, p.nick)) p.color = PALETTE.find(c => !used.has(c.toLowerCase())) || PALETTE[0];
     if (used.has(p.color.toLowerCase())) p.color = PALETTE.find(c => !used.has(c.toLowerCase())) || p.color;
     used.add(p.color.toLowerCase());
   });
@@ -944,6 +952,11 @@ function dungeonProgressForNick(nick) {
   if (!p.dungeon) { p.dungeon = loadLegacyGlobalDungeonProgress() || defaultDungeonProgress(); saveProfiles(); }
   return p.dungeon;
 }
+function dungeonBestOf(nick) {   // najhlbšie poschodie profilu (hosť = záložné úložisko)
+  const p = nick ? profiles[nickKey(nick)] : null;
+  return p ? (p.dungeon && p.dungeon.best) || 1 : (loadLegacyGlobalDungeonProgress() || defaultDungeonProgress()).best;
+}
+const bossColorUnlocked = (c, nick) => dungeonBestOf(nick) >= c.floor;
 let dungeon = { active: false, progress: null };
 function refreshDungeonProgressSource() {
   const nick = setup.players[0].nick;
@@ -1112,7 +1125,9 @@ const ACHIEVEMENTS = [
   { id: 'cela_kampan', icon: '🏆', title: 'Veliteľ slnečnej sústavy', desc: 'Dokonči celú kampaň - Zem, Mesiac, Mars aj Venušu.', check: p => !!p.story && p.story.unlocked >= STORY_MISSIONS.length },
   { id: 'vytrvalec', icon: '⏱️', title: 'Vytrvalec', desc: 'Odohraj 150 kôl.', check: p => p.rounds >= 150 },
   { id: 'dungeon_5', icon: '🕯️', title: 'Prieskumník dungeonu', desc: 'Dosiahni 5. poschodie Dungeonu.', check: p => !!p.dungeon && p.dungeon.best >= 5 },
-  { id: 'dungeon_boss1', icon: '👹', title: 'Lovec bossov', desc: 'Zraz prvého bossa Dungeonu.', check: p => !!p.dungeon && p.dungeon.best >= 6 },
+  { id: 'dungeon_boss1', icon: '👹', title: 'Lovec bossov', desc: 'Zraz obra na 5. poschodí Dungeonu. Odmena: farba tanku Obsidián.', check: p => !!p.dungeon && p.dungeon.best >= 6 },
+  { id: 'dungeon_boss2', icon: '🔱', title: 'Zlomiteľ trojice', desc: 'Zraz trojicu spojených tankov na 10. poschodí. Odmena: farba tanku Magma.', check: p => !!p.dungeon && p.dungeon.best >= 11 },
+  { id: 'dungeon_boss3', icon: '👑', title: 'Pán hlbín', desc: 'Zraz bossa na 15. poschodí Dungeonu. Odmena: farba tanku Platina.', check: p => !!p.dungeon && p.dungeon.best >= 16 },
   { id: 'dungeon_10', icon: '⛏️', title: 'Baník', desc: 'Dosiahni 10. poschodie Dungeonu.', check: p => !!p.dungeon && p.dungeon.best >= 10 },
   { id: 'dungeon_25', icon: '💣', title: 'Hlbinný veliteľ', desc: 'Dosiahni 25. poschodie Dungeonu.', check: p => !!p.dungeon && p.dungeon.best >= 25 },
 ];
@@ -1963,6 +1978,16 @@ function renderDungeonScreen() {
     '<br><small>Ty (a prípadne spoluhráči na tejto obrazovke) proti botom - prestrieľaj sa hlinou k súperom. Pozor: vlastný výbuch v tesnej chodbe zasiahne aj teba!</small>';
   $('dungeonEnterBtn').textContent = '▶ Vstúpiť · Poschodie ' + floor;
 }
+function renderLoot(items) {   // tabuľka odmien na konci poschodia: ikona zbrane/odznaku/farby + názov, postupne naskakuje
+  const box = $('endLoot'); if (!box) return;
+  box.style.display = items.length ? '' : 'none';
+  box.innerHTML = items.length ? '<div class="lootHead">🎁 Odmeny</div><div class="lootRow">' + items.map((it, i) => {
+    const ic = it.ammo ? '<span class="lootIc ammo" style="--c:' + it.color + '">' + esc(AMMO[it.ammo].icon) + '</span>'
+      : it.art ? '<span class="lootIc art" style="--c:' + it.color + '"><img src="assets/tanks/tank_hull_' + it.art + '.png" alt="" draggable="false"></span>'
+      : '<span class="lootIc" style="--c:' + it.color + '">' + it.icon + '</span>';
+    return '<div class="lootItem' + (it.badge ? ' badge' : '') + '" style="--c:' + it.color + ';animation-delay:' + (0.15 + i * 0.18) + 's">' + ic + '<b>' + esc(it.label) + '</b><small>' + esc(it.sub) + '</small></div>';
+  }).join('') + '</div>' : '';
+}
 function enterShop(resume) {
   genArena(pickBiome());
   projectiles = []; particles = []; beams = []; emitters = []; strikes = []; rings = []; glows = []; flash = 0; treadMarks = [];
@@ -2123,19 +2148,21 @@ function afterRoundEnd() {
   if (w) {
     state = 'matchEnd'; clearSave(); hide('pause');
     $('endNormalBtns').style.display = ''; $('endStoryBtns').style.display = 'none'; $('endDungeonBtns').style.display = 'none';
+    renderLoot([]);
     if (dungeon.active) {
       const floor = dungeon.progress.floor, boss = floor % 5 === 0, won = w.team === 0;
-      let loot = '';
-      if (won) {   // odmena za vyčistené poschodie: peniaze + pri bossovi zbrane a oprava navyše, nech sa oplatí ísť hlbšie
-        const me = tanks.find(t => t.team === 0), cash = 150 + floor * 25 + (boss ? 500 + floor * 20 : 0);
-        if (me) {
-          me.money += cash; loot = '<br>💰 Odmena: <b>+€' + cash + '</b>';
-          if (boss) {
-            const drops = floor >= 15 ? ['nukeS', 'repairBig'] : floor >= 10 ? ['firestorm', 'repairBig'] : ['he', 'repairBig'];
-            drops.forEach(id => { if (AMMO[id] && me.ammo[id] != null) me.ammo[id] = Math.min(capOf(id), me.ammo[id] + 2); });
-            loot += '<br>🎁 Lup z bossa: <b>' + drops.map(id => '2× ' + AMMO[id].name).join(', ') + '</b>';
-          }
-        }
+      const me = tanks.find(t => t.team === 0), lootItems = [];
+      const profMe = me && me.nick ? profiles[nickKey(me.nick)] : null, achBefore = new Set(profMe && profMe.achievements || []), bestBefore = dungeonBestOf(me && me.nick);
+      if (won && me) {   // odmena za vyčistené poschodie: peniaze + zbrane (pri bossovi viac a lepšie), nech sa oplatí ísť hlbšie
+        const cash = 150 + floor * 25 + (boss ? 500 + floor * 20 : 0);
+        me.money += cash; lootItems.push({ icon: '💰', label: '+€' + cash, sub: 'Peniaze', color: '#f2c230' });
+        const drops = boss ? (floor >= 15 ? ['nukeS', 'repairBig'] : floor >= 10 ? ['firestorm', 'repairBig'] : ['he', 'repairBig'])
+          : (Math.random() < 0.4 ? [['missile', 'repair', 'bounce'][floor % 3]] : []);
+        drops.forEach(id => {
+          if (!AMMO[id] || me.ammo[id] == null) return;
+          me.ammo[id] = Math.min(capOf(id), me.ammo[id] + 2);
+          lootItems.push({ ammo: id, label: '2× ' + AMMO[id].name, sub: boss ? 'Lup z bossa' : 'Nájdené v chodbe', color: AMMO[id].color });
+        });
       }
       if (won) {   // postup sa ukladá hneď po výhre (nie až po kliknutí "Ďalšie poschodie"), nech sa nestratí ani keď hráč potom odíde do menu
         dungeon.progress.floor = floor + 1;
@@ -2143,10 +2170,16 @@ function afterRoundEnd() {
         saveDungeonProgress();
       }
       recordStats(won ? tanks.find(t => t.team === 0) : undefined);   // postup/odznaky Dungeonu sa počítajú do profilu rovnako ako kampaň
+      if (won) {   // nové odznaky a odomknuté farby tanku z tohto poschodia
+        const achNow = new Set(profMe && profMe.achievements || []);
+        ACHIEVEMENTS.filter(a => achNow.has(a.id) && !achBefore.has(a.id)).forEach(a => lootItems.push({ icon: a.icon, label: a.title, sub: 'Nový odznak!', color: '#ffd54a', badge: true }));
+        BOSS_COLORS.filter(c => bestBefore < c.floor && dungeon.progress.best >= c.floor).forEach(c => lootItems.push({ art: c.id, label: c.name, sub: 'Nová farba tanku!', color: c.hex, badge: true }));
+      }
+      renderLoot(lootItems);
       $('endTitle').textContent = won ? ('Poschodie ' + floor + ' vyčistené!' + (boss ? ' 👹' : '')) : ('Padli ste na poschodí ' + floor);
       $('endTitle').style.color = won ? '#5fd35f' : '#e5484d';
       $('endSub').innerHTML = won
-        ? ((boss ? 'Boss zničený! Výťah sa posúva na ďalšie poschodie.' : 'Chodba je čistá - pokračuj hlbšie.') + loot)
+        ? (boss ? 'Boss zničený! Výťah sa posúva na ďalšie poschodie.' : 'Chodba je čistá - pokračuj hlbšie.')
         : 'Skús to poschodie znova - čerstvá výzbroj aj postup zostávajú zachované.';
       $('endNormalBtns').style.display = 'none'; $('endDungeonBtns').style.display = 'flex';
       $('dungeonNextBtn').style.display = won ? '' : 'none';
@@ -2845,6 +2878,7 @@ function roundRect(x, y, w, h, r, c) {
 const TANK_COLOR_NAME = {
   '#3e8bff': 'blue', '#e5484d': 'red', '#3fbf5f': 'green', '#f2c230': 'gold', '#b06cff': 'purple',
   '#ff8a3d': 'orange', '#2fd0c8': 'teal', '#ff5fb0': 'pink', '#9aa5b1': 'gray', '#8bd450': 'lime',
+  '#3a3f4c': 'obsidian', '#ff3d00': 'magma', '#e8ecf4': 'platinum',
 };
 // Realistickejší sprite set (2025-10) je prekreslený z jednej spoločnej flat-side-view predlohy a len prefarbený
 // pre každú farbu (HSV hue/sat swap pri zachovaní tieňovania) – preto majú všetky farby rovnaké rozmery/pivot.
@@ -2852,6 +2886,7 @@ const TANK_ART_SHARED = { hullW: 400, hullH: 101, pivotX: 175, turretSide: 437 }
 const TANK_ART_META = {
   blue: TANK_ART_SHARED, red: TANK_ART_SHARED, green: TANK_ART_SHARED, gold: TANK_ART_SHARED, purple: TANK_ART_SHARED,
   orange: TANK_ART_SHARED, teal: TANK_ART_SHARED, pink: TANK_ART_SHARED, gray: TANK_ART_SHARED, lime: TANK_ART_SHARED,
+  obsidian: TANK_ART_SHARED, magma: TANK_ART_SHARED, platinum: TANK_ART_SHARED,
 };
 const TANK_TARGET_W = 130;   // cieľová šírka trupu na obrazovke (px); zväčšené z 76, nech je detailnejší realistický sprite čitateľný
 function tankArtScale(colorName) { const m = TANK_ART_META[colorName]; return m ? TANK_TARGET_W / m.hullW : 0; }
@@ -3670,6 +3705,7 @@ function renderSetup() {
       '<input class="pname" data-i="' + i + '" maxlength="14" list="nickList" autocomplete="off" placeholder="Prezývka" value="' + esc(p.name) + '"' + (prof || p.bot ? ' readonly' : '') + ' aria-label="Prezývka hráča ' + (i + 1) + '">' +
       '<button class="lgn' + (prof ? ' out' : '') + '" data-i="' + i + '" data-act="' + (prof ? 'out' : 'in') + '"' + (p.bot ? ' disabled' : '') + '>' + (prof ? 'Odhlásiť' : 'Prihlásiť') + '</button>' +
       '<div class="sw"><select class="bsel" data-i="' + i + '" title="Typ hráča">' + ['Človek', 'PC ľahký', 'PC stredný', 'PC ťažký'].map((n, k) => '<option value="' + k + '"' + (p.bot === k ? ' selected' : '') + '>' + n + '</option>').join('') + '</select>' + PALETTE.map(c => '<button class="swb' + (c.toLowerCase() === p.color.toLowerCase() ? ' sel' : '') + '" data-i="' + i + '" data-c="' + c + '" style="background:' + c + '"' + (taken.has(c.toLowerCase()) ? ' disabled' : '') + ' title="Farba tanku"></button>').join('') +
+      BOSS_COLORS.map(bc => { const ok = bossColorUnlocked(bc, p.nick); return '<button class="swb boss' + (ok ? '' : ' locked') + (bc.hex === p.color.toLowerCase() ? ' sel' : '') + '" data-i="' + i + '" data-c="' + bc.hex + '" style="background:' + bc.hex + '"' + (!ok || taken.has(bc.hex) ? ' disabled' : '') + ' title="' + (ok ? 'Boss farba: ' + bc.name : '🔒 ' + bc.name + ' - ' + bc.how) + '">' + (ok ? '' : '🔒') + '</button>'; }).join('') +
       '<input type="color" class="cust" data-i="' + i + '" value="' + p.color + '" title="Vlastná farba"></div>' +
       '<small class="hint">' + (p.bot ? 'Počítačový súper – hrá aj nakupuje sám.' : status + '<br>' + KEYSETS[i].hint + ' · alebo dotykové tlačidlá') + '</small></div>';
   }).join('');
