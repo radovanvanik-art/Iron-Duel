@@ -284,6 +284,7 @@
   .swb:disabled{opacity:.22;cursor:not-allowed}
   #endLoot{margin:4px 0 12px}
   #endLoot .lootHead{font-weight:800;letter-spacing:.06em;text-transform:uppercase;font-size:12px;color:#ffd54a;margin-bottom:8px}
+  #endLoot .lootWho{font-weight:800;font-size:14px;margin:8px 0 6px}
   #endLoot .lootRow{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
   #endLoot .lootItem{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:104px;max-width:140px;padding:10px 8px;border-radius:12px;background:rgba(255,255,255,.07);border:1px solid color-mix(in srgb,var(--c) 55%,transparent);animation:lootPop .5s cubic-bezier(.2,.9,.25,1.4) both}
   #endLoot .lootItem.badge{background:linear-gradient(180deg,color-mix(in srgb,var(--c) 22%,transparent),rgba(255,255,255,.05));box-shadow:0 0 14px color-mix(in srgb,var(--c) 45%,transparent)}
@@ -819,4 +820,4 @@
     window.__firestoreDb = firebase.firestore();
   } catch (_) { /* mimo web hostingu (napr. Claude Artifact) - použije sa záložné window.claude db */ }
 </script>
-<script src="game.js?v=37"></script>
+<script src="game.js?v=38"></script>

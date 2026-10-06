@@ -1483,7 +1483,7 @@ function serializeTank(t) {
     ammo: Object.fromEntries(ORDER.map(k => [k, t.ammo[k] === Infinity ? 'inf' : t.ammo[k]])),
     bot: t.bot, speedLvl: t.speedLvl, armorLvl: t.armorLvl, fuelLvl: t.fuelLvl, wlv: Object.assign({}, t.wlv),
     wins: t.wins, streak: t.streak, level: t.level, xp: t.xp, shields: t.shields.slice(), shT: t.shT, shieldMax: t.shieldMax,
-    fuel: t.fuel, rep: Object.assign({}, t.rep), repLast: Object.assign({}, t.repLast),
+    fuel: t.fuel, rep: Object.assign({}, t.rep), repLast: Object.assign({}, t.repLast), tot: { money: t.tot.money, xp: t.tot.xp, levels: t.tot.levels.slice() },
     x: t.x, y: t.y, vx: t.vx, power: t.power, tilt: t.tilt, face: t.face, ang: t.ang, hp: t.hp, shield: t.shield, sel: t.sel,
     dead: !!t.dead, fired: !!t.fired, stun: !!t.stun, questId: t.quest ? t.quest.id : null, questDone: !!t.questDone, tookDmg: !!t.tookDmg,
   };
@@ -1525,6 +1525,7 @@ function syncPassiveUI() {   // pasívne zariadenie: prekresli obrazovky podľa 
     const w = tanks.find(t => t.wins >= WIN_ROUNDS) || tanks.slice().sort((a, b) => b.wins - a.wins)[0];
     $('endTitle').textContent = w.name + ' vyhráva zápas!'; $('endTitle').style.color = w.color;
     $('endSub').innerHTML = 'Zápas skončil.';
+    renderLoot(matchLootGroups(w, null));
     $('endNormalBtns').style.display = ''; $('endStoryBtns').style.display = 'none';
     $('end').classList.remove('win', 'lose');   // pasívne zariadenie v multiplayeri - generická bitevná scéna
     show('end');
@@ -1725,7 +1726,7 @@ function makeTank(id, cfg) {
     money: START_MONEY + 100 * perkRank(prof, 'cash'), ammo: Object.fromEntries(ORDER.map(k => [k, k === 'ap' ? Infinity : 0])), bot: cfg.bot | 0, botSt: null, hudRects: [],
     speedLvl: 0, armorLvl: perkRank(prof, 'armor'), fuelLvl: perkRank(prof, 'fuel'), wlv: Object.fromEntries(WLV_IDS.map(k => [k, 0])), wins: 0, streak: 0,
     level: prof ? clampInt(prof.level, 1, MAX_LEVEL, 1) : 1, xp: prof ? Math.max(0, +prof.xp || 0) : 0, shields: new Array(10).fill(0), shT: 0, shieldMax: 0,
-    fuel: FUEL_START, noFuelT: 0, rep: {}, repLast: {},
+    fuel: FUEL_START, noFuelT: 0, rep: {}, repLast: {}, tot: { money: 0, xp: 0, levels: [] },   // tot = súčty za celý zápas/misiu (rep sa nuluje každé kolo) - pre tabuľku odmien na konci
     x: 0, y: 0, vx: 0, power: 100, tilt: 0, face: 1, ang: 50,
     hp: BASE_HP, shield: 0, sel: 'ap', cd: 0, emp: 0, dead: false, prevAmmoBtn: '',
   };
@@ -1764,15 +1765,18 @@ function reward(t, amount, key) {
   if (!t || amount <= 0) return;
   if (t.nick && key !== 'level') amount = Math.round(amount * (1 + 0.1 * perkRank(getProfile(t.nick), 'income')));   // "Vojnová ekonomika" - bonus len na zárobky za hru, nie na odmenu za level-up
   t.money += amount; t.rep[key] = (t.rep[key] || 0) + amount;
+  if (t.tot) t.tot.money += amount;
 }
 function addXp(t, n) {
   if (!t || t.level >= MAX_LEVEL) return;
   if (t.nick) n = Math.round(n * (1 + 0.1 * perkRank(getProfile(t.nick), 'xp')));   // "Skúsený veliteľ" - bonus XP
   t.xp += n; t.rep.xp = (t.rep.xp || 0) + n;
+  if (t.tot) t.tot.xp += n;
   while (t.level < MAX_LEVEL && t.xp >= xpToNext(t.level)) {
     t.xp -= xpToNext(t.level); t.level++;
     reward(t, levelBonus(t.level), 'level');
     (t.rep.levels = t.rep.levels || []).push(t.level);
+    if (t.tot) t.tot.levels.push(t.level);
     floatText(t.x, t.y - 70, 'LEVEL ' + t.level + '!', '#ffd54a');
     tone(500, 1400, 0.4, 'triangle', 0.08);
   }
@@ -2015,15 +2019,50 @@ function renderDungeonScreen() {
   if (mod) $('dungeonInfo').innerHTML += '<br><b style="color:#ffd54a">' + mod.icon + ' Modifikátor: ' + mod.name + '</b> <small>(+' + Math.round((mod.pay - 1) * 100) + ' % odmena)</small><br><small>' + mod.desc + '</small>';
   $('dungeonEnterBtn').textContent = '▶ Vstúpiť · Poschodie ' + floor;
 }
-function renderLoot(items) {   // tabuľka odmien na konci poschodia: ikona zbrane/odznaku/farby + názov, postupne naskakuje
+function renderLoot(arg) {   // tabuľka odmien na konci hry: buď plochý zoznam dlaždíc, alebo skupiny [{title, color, items}] (viac hráčov); dlaždice postupne naskakujú
   const box = $('endLoot'); if (!box) return;
-  box.style.display = items.length ? '' : 'none';
-  box.innerHTML = items.length ? '<div class="lootHead">🎁 Odmeny</div><div class="lootRow">' + items.map((it, i) => {
+  const groups = (arg || []).length && arg[0].items ? arg : [{ items: arg || [] }];
+  const total = groups.reduce((n, g) => n + g.items.length, 0);
+  const tile = (it, i) => {
     const ic = it.ammo ? '<span class="lootIc ammo" style="--c:' + it.color + '">' + esc(AMMO[it.ammo].icon) + '</span>'
       : it.art ? '<span class="lootIc art" style="--c:' + it.color + '"><img src="assets/tanks/tank_hull_' + it.art + '.png" alt="" draggable="false"></span>'
       : '<span class="lootIc" style="--c:' + it.color + '">' + it.icon + '</span>';
     return '<div class="lootItem' + (it.badge ? ' badge' : '') + '" style="--c:' + it.color + ';animation-delay:' + (0.15 + i * 0.18) + 's">' + ic + '<b>' + esc(it.label) + '</b><small>' + esc(it.sub) + '</small></div>';
-  }).join('') + '</div>' : '';
+  };
+  let n = 0;
+  const html = total ? '<div class="lootHead">🎁 Odmeny</div>' + groups.filter(g => g.items.length).map(g =>
+    (g.title ? '<div class="lootWho" style="color:' + (g.color || '#fff') + '">' + esc(g.title) + '</div>' : '') +
+    '<div class="lootRow">' + g.items.map(it => tile(it, n++)).join('') + '</div>').join('') : '';
+  if (box._sig === html) return;   // pasívne zariadenie v multiplayeri volá túto funkciu pri každej aktualizácii stavu - bez zmeny nič neprekresľuj (inak by animácia blikala)
+  box._sig = html; box.style.display = total ? '' : 'none'; box.innerHTML = html;
+}
+// súhrn zápasu pre jedného hráča: zárobok, XP, nová hodnosť, zničené tanky
+function matchLootItems(t, winner) {
+  const it = [], tot = t.tot || { money: 0, xp: 0, levels: [] };
+  if (t === winner) it.push({ icon: '🏆', label: 'Víťaz', sub: '★' + t.wins, color: '#ffd54a', badge: true });
+  if (tot.money > 0) it.push({ icon: '💰', label: '+€' + tot.money, sub: 'Zárobok', color: '#f2c230' });
+  if (tot.xp > 0) it.push({ icon: '⭐', label: '+' + tot.xp + ' XP', sub: 'Skúsenosti', color: '#8cb8ff' });
+  if (tot.levels.length) it.push({ icon: '🎖️', label: 'LV ' + tot.levels[tot.levels.length - 1], sub: tot.levels.length > 1 ? 'Postup o ' + tot.levels.length + ' hodností' : 'Nová hodnosť!', color: '#ffd54a', badge: true });
+  if ((t.kills || 0) > 0) it.push({ icon: '💥', label: t.kills + '×', sub: 'Zničené tanky', color: '#ff7a5a' });
+  return it;
+}
+// nové odznaky a splnené výzvy: snímka profilov pred recordStats() a rozdiel po ňom
+function snapProfiles() {
+  const o = {};
+  tanks.forEach(t => { const p = t.nick ? profiles[nickKey(t.nick)] : null; if (p) o[nickKey(t.nick)] = { ach: new Set(p.achievements || []), d: !!(p.daily && p.daily.claimed), w: !!(p.weekly && p.weekly.claimed) }; });
+  return o;
+}
+function profileExtraItems(snap, t) {
+  const k = t.nick ? nickKey(t.nick) : null, p = k ? profiles[k] : null, b = k && snap[k], it = [];
+  if (!p || !b) return it;
+  ACHIEVEMENTS.filter(a => (p.achievements || []).includes(a.id) && !b.ach.has(a.id)).forEach(a => it.push({ icon: a.icon, label: a.title, sub: 'Nový odznak!', color: '#ffd54a', badge: true }));
+  if (!b.d && p.daily && p.daily.claimed) { const dc = dailyChallengeForToday(); it.push({ icon: '🗓️', label: dc.title, sub: 'Denná výzva +' + dc.xp + ' XP', color: '#6bffb0', badge: true }); }
+  if (!b.w && p.weekly && p.weekly.claimed) { const wc = weeklyChallengeForToday(); it.push({ icon: '📅', label: wc.title, sub: 'Týždenná výzva +' + wc.xp + ' XP', color: '#6bffb0', badge: true }); }
+  return it;
+}
+function matchLootGroups(winner, snap) {   // jedna skupina na každého ľudského hráča (boti sa nezobrazujú)
+  const hs = tanks.filter(t => !t.bot);
+  return hs.map(t => ({ title: hs.length > 1 ? t.name : '', color: t.color, items: matchLootItems(t, winner).concat(snap ? profileExtraItems(snap, t) : []) }));
 }
 function enterShop(resume) {
   genArena(pickBiome());
@@ -2243,6 +2282,7 @@ function afterRoundEnd() {
     if (story.active) {
       const m = STORY_MISSIONS[story.idx], won = w === tanks[0];
       let worldReward = null;
+      const snapS = snapProfiles(), wasDone = !!story.progress.done[story.idx], unlockedBefore = story.progress.unlocked, storyItems = [];
       if (won) {
         story.progress.unlocked = Math.max(story.progress.unlocked, story.idx + 2); story.progress.done[story.idx] = true;
         const wld = missionWorld(m), wm = worldMissions(wld), flags = ensureStoryFlags(story.progress);
@@ -2252,10 +2292,16 @@ function afterRoundEnd() {
           tanks[0].ammo[rw.ammoId] = Math.min(capOf(rw.ammoId), (tanks[0].ammo[rw.ammoId] || 0) + rw.qty);
           addXp(tanks[0], rw.xp);
           worldReward = wld;
+          storyItems.push({ ammo: rw.ammoId, label: rw.qty + '× ' + AMMO[rw.ammoId].name, sub: 'Dar generála', color: AMMO[rw.ammoId].color, badge: true }, { icon: '🌍', label: 'Planéta dobytá', sub: '+' + rw.xp + ' XP', color: '#6bffb0', badge: true });
         }
         saveStoryProgress(); saveStoryLoadout(tanks[0]);
       }
-      recordStats(w);   // misie v kampani sa teraz tiež počítajú do štatistík profilu (zápasy/výhry/kolá)
+      recordStats(w);
+      if (won && !wasDone) storyItems.push({ icon: '🗺️', label: 'Misia ' + (story.idx + 1), sub: 'Prvé splnenie', color: '#6bffb0' });
+      if (won && story.progress.unlocked > unlockedBefore && STORY_MISSIONS[story.idx + 1]) storyItems.push({ icon: '🔓', label: 'Misia ' + (story.idx + 2), sub: 'Odomknutá', color: '#8cb8ff' });
+      if (won && tanks[0].nick) storyItems.push({ icon: '🎒', label: '€' + tanks[0].money, sub: 'Výbava prenesená', color: '#c9a7ff' });
+      renderLoot([{ title: '', items: matchLootItems(tanks[0], w).concat(storyItems, profileExtraItems(snapS, tanks[0])) }]);
+      // misie v kampani sa teraz tiež počítajú do štatistík profilu (zápasy/výhry/kolá)
       $('endTitle').textContent = won ? 'Misia splnená!' : 'Misia zlyhala';
       $('endTitle').style.color = won ? '#5fd35f' : '#e5484d';
       $('endSub').innerHTML = esc(won ? m.win : m.lose);
@@ -2266,7 +2312,8 @@ function afterRoundEnd() {
       if (worldReward) showGeneralDialog(worldReward, 'outro');
       return;
     }
-    const saved = recordStats(w);
+    const snapN = snapProfiles(), saved = recordStats(w);
+    renderLoot(matchLootGroups(w, snapN));
     $('endTitle').textContent = w.name + ' vyhráva zápas!';
     $('endTitle').style.color = w.color;
     const rank = tanks.slice().sort((x, y) => y.wins - x.wins || y.level - x.level);
