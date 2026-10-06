@@ -957,7 +957,7 @@ function dungeonBestOf(nick) {   // najhlbšie poschodie profilu (hosť = zálo�
   return p ? (p.dungeon && p.dungeon.best) || 1 : (loadLegacyGlobalDungeonProgress() || defaultDungeonProgress()).best;
 }
 const bossColorUnlocked = (c, nick) => dungeonBestOf(nick) >= c.floor;
-let dungeon = { active: false, progress: null };
+let dungeon = { active: false, progress: null, mod: null };
 function refreshDungeonProgressSource() {
   const nick = setup.players[0].nick;
   dungeon.progress = nick ? dungeonProgressForNick(nick) : (loadLegacyGlobalDungeonProgress() || defaultDungeonProgress());
@@ -1849,7 +1849,7 @@ function genArena(key) {
   rollWind();
 }
 const spawnXs = n => {
-  if (WORLD_W === W) return n === 2 ? [135, 1145] : n === 3 ? [135, 640, 1145] : [135, 468, 812, 1145];   // pri normálnej mape presne pôvodné hodnoty (nič sa vizuálne nemení)
+  if (WORLD_W === W && n <= 4) return n === 2 ? [135, 1145] : n === 3 ? [135, 640, 1145] : [135, 468, 812, 1145];   // pri normálnej mape presne pôvodné hodnoty (nič sa vizuálne nemení)
   const margin = 135;
   return Array.from({ length: n }, (_, i) => Math.round(margin + (WORLD_W - 2 * margin) * i / (n - 1)));
 };
@@ -1926,6 +1926,25 @@ function toMenu() {
   refreshContinue(); renderSetup(); renderHome(); show('home');
 }
 // ---------- režim Dungeon: podzemné poschodia proti botom, naposledy stojaci tím vyhráva, nekonečná veža s bossom každých 5 poschodí ----------
+// modifikátory poschodí: nebossové poschodia od 2. majú (~75 %) jedno pravidlo navyše, deterministicky podľa čísla poschodia (retry = rovnaké pravidlo);
+// pay = násobok peňažnej odmeny za poschodie
+const DUNGEON_MODS = {
+  dark:     { icon: '🌑', name: 'Tma',                 pay: 1.25, desc: 'Vidíš len okolie svojho tanku a striel. Nepriateľov nájdeš podľa výbuchov a obrysov.' },
+  shield:   { icon: '💠', name: 'Regeneračné štíty',   pay: 1.3,  desc: 'Nepriatelia majú štít, ktorý sa im na začiatku každého ťahu čiastočne dopĺňa.' },
+  rockfall: { icon: '🪨', name: 'Padajúce kamene',     pay: 1.2,  desc: 'Strop sa drolí - každý ťah dopadne na náhodné miesto salva kameňov. Sleduj červené výstrahy!' },
+  storm:    { icon: '🌪', name: 'Búrka v šachte',      pay: 1.15, desc: 'Silný vietor mení smer každý ťah - počítaj s ním pri mierení.' },
+  armor:    { icon: '🛡', name: 'Obrnení nájazdníci',  pay: 1.3,  desc: 'Nepriatelia majú o 3 úrovne brnenia viac (výdržnejší).' },
+  swarm:    { icon: '👥', name: 'Presila',             pay: 1.2,  desc: 'O jedného nepriateľa viac, ale slabšieho.' },
+};
+function dungeonModFor(floor) {
+  if (floor < 2 || floor % 5 === 0) return null;   // 1. poschodie je zoznámenie, bossovia sú show sami o sebe
+  const h = Math.imul(floor, 2654435761) >>> 0;
+  if (h % 4 === 0) return null;
+  const keys = Object.keys(DUNGEON_MODS); let id = keys[(floor + Math.floor(floor / 6)) % keys.length];   // rotácia, nech sa pravidlá pravidelne striedajú všetky
+  if (id === 'swarm' && dungeonBotCount(floor, false) >= 4) id = 'armor';   // viac ako 4 súperov sa nezmestí na obrazovku
+  return Object.assign({ id }, DUNGEON_MODS[id]);
+}
+const dungeonModTag = () => dungeon.active && dungeon.mod ? dungeon.mod.icon + ' ' + dungeon.mod.name : '';
 const DUNGEON_BOSSES = {   // bossovia sa striedajú: 5. poschodie obor, 10. trojica spojených tankov, 15. obor ... (každé ďalšie kolo je pomenované zvlášť)
   giant:  ['👹 Krtko Obor', '👹 Jadro Hory', '👹 Posledný Strážca'],
   triple: ['👹 Trojča Štôlne', '👹 Cerberus Hlbín', '👹 Žeravá Trojica'],
@@ -1935,7 +1954,7 @@ const dungeonBossName = floor => { const kind = dungeonBossKind(floor), list = D
 function dungeonBotCount(floor, boss) { return boss ? 1 : Math.min(4, 1 + Math.floor((floor - 1) / 3)); }
 function dungeonBotLevel(floor, boss) { return boss ? 3 : clampInt(1 + Math.floor((floor - 1) / 4), 1, 3); }
 function buildDungeonEnemies(floor, startId) {
-  const boss = floor % 5 === 0, n = dungeonBotCount(floor, boss), lvl = dungeonBotLevel(floor, boss);
+  const boss = floor % 5 === 0, mid = dungeon.mod && dungeon.mod.id, n = Math.min(4, dungeonBotCount(floor, boss) + (mid === 'swarm' ? 1 : 0)), lvl = clampInt(dungeonBotLevel(floor, boss) - (mid === 'swarm' ? 1 : 0), 1, 3);
   const used = new Set(tanks.map(t => t.color.toLowerCase())), out = [];
   for (let i = 0; i < n; i++) {
     const color = PALETTE.find(c => !used.has(c.toLowerCase())) || PALETTE[(startId + i) % PALETTE.length];
@@ -1944,13 +1963,14 @@ function buildDungeonEnemies(floor, startId) {
     const t = makeTank(startId + i, { name, color, nick: null, bot: lvl, team: 1 });
     if (boss) makeBoss(t, dungeonBossKind(floor));
     t.money = Math.round(420 + floor * 55 + (boss ? 700 : 0));
-    t.armorLvl = Math.min(6, Math.floor(floor / 4) + (boss ? 2 : 0));
+    t.armorLvl = Math.min(mid === 'armor' ? 9 : 6, Math.floor(floor / 4) + (boss ? 2 : 0) + (mid === 'armor' ? 3 : 0));
     botShop(t);
     out.push(t);
   }
   return out;
 }
-function dungeonEnterFloor() {   // spoločné jadro pre vstup na poschodie - hráčov tank (peniaze, munícia, brnenie) sa NEVYTVÁRA nanovo,
+function dungeonEnterFloor() {
+  dungeon.mod = dungeonModFor(dungeon.progress.floor);   // spoločné jadro pre vstup na poschodie - hráčov tank (peniaze, munícia, brnenie) sa NEVYTVÁRA nanovo,
   // len sa k nemu domontujú noví (silnejší) nepriatelia pre aktuálne poschodie - výzbroj sa tak naprieč poschodiami hromadí
   const humans = tanks.filter(t => t.team === 0);
   tanks = humans.concat(buildDungeonEnemies(dungeon.progress.floor, humans.length));
@@ -1959,7 +1979,7 @@ function dungeonEnterFloor() {   // spoločné jadro pre vstup na poschodie - hr
   buildPads(); enterShop();
   hide('dungeon'); hide('menu'); hide('end'); hide('home');
   const floor = dungeon.progress.floor;
-  $('shopTitle').textContent = '⛏ Dungeon · Poschodie ' + floor + (floor % 5 === 0 ? ' · 👹 BOSS: ' + dungeonBossName(floor) + (dungeonBossKind(floor) === 'giant' ? ' (obrovský tank)' : ' (3 spojené tanky)') : '');
+  $('shopTitle').textContent = '⛏ Dungeon · Poschodie ' + floor + (floor % 5 === 0 ? ' · 👹 BOSS: ' + dungeonBossName(floor) + (dungeonBossKind(floor) === 'giant' ? ' (obrovský tank)' : ' (3 spojené tanky)') : (dungeon.mod ? ' · ' + dungeonModTag() : ''));
 }
 function startDungeon() {   // čerstvý vstup do Dungeonu (z domovskej obrazovky) - tu sa tank hráča vytvára nanovo so štartovacou výzbrojou
   story.active = false; story.idx = null; document.body.classList.remove('storymode');
@@ -1976,6 +1996,8 @@ function renderDungeonScreen() {
   $('dungeonInfo').innerHTML = 'Aktuálne poschodie: <b>' + floor + '</b>' + (boss ? ' · 👹 poschodie bossa: ' + dungeonBossName(floor) : '') +
     '<br>Najhlbšie dosiahnuté poschodie: <b>' + best + '</b>' +
     '<br><small>Ty (a prípadne spoluhráči na tejto obrazovke) proti botom - prestrieľaj sa hlinou k súperom. Pozor: vlastný výbuch v tesnej chodbe zasiahne aj teba!</small>';
+  const mod = dungeonModFor(floor);
+  if (mod) $('dungeonInfo').innerHTML += '<br><b style="color:#ffd54a">' + mod.icon + ' Modifikátor: ' + mod.name + '</b> <small>(+' + Math.round((mod.pay - 1) * 100) + ' % odmena)</small><br><small>' + mod.desc + '</small>';
   $('dungeonEnterBtn').textContent = '▶ Vstúpiť · Poschodie ' + floor;
 }
 function renderLoot(items) {   // tabuľka odmien na konci poschodia: ikona zbrane/odznaku/farby + názov, postupne naskakuje
@@ -2016,6 +2038,13 @@ function beginTurn(i) {
   t.fired = false; t.stun = t.emp > 0; t.emp = 0; ammoMenu.t = 0;
   t.botSt = t.bot ? { wait: 0.9, plan: null, hold: 0 } : null;
   rollWind();                                              // vietor sa mení každý ťah
+  const mid = dungeon.active && dungeon.mod && dungeon.mod.id;
+  if (mid === 'storm') wind = (Math.random() < 0.5 ? -1 : 1) * Math.round(rand(55, 85));
+  if (mid === 'shield' && t.team === 1 && t.shieldMax && t.shield < t.shieldMax) { t.shield = Math.min(t.shieldMax, t.shield + Math.ceil(t.shieldMax * 0.3)); floatText(t.x, t.y - 90, '+ŠTÍT', '#8cf'); }
+  if (mid === 'rockfall') {   // salva kameňov; polovicu času mieri na niektorý živý tank
+    const live = tanks.filter(o => !o.dead), tg = Math.random() < 0.5 && live.length ? live[Math.floor(Math.random() * live.length)].x + rand(-120, 120) : rand(100, WORLD_W - 100);
+    strikes.push({ x: clamp(tg, 60, WORLD_W - 60), t: 1.8, n: 3, owner: -1 });
+  }
   for (let k = 0; k < 4; k++) { held[k] = {}; kb[k] = {}; }
   floatText(t.x, t.y - 70, t.stun ? 'OMRÁČENÝ – iba streľba' : 'NA RADE', t.stun ? '#8cff7a' : '#fff');
   tone(700, 900, 0.08, 'triangle', 0.05);
@@ -2103,11 +2132,13 @@ function startPlay() {
     let k = 0;   // nasadí sa najsilnejší vlastnený štít (spotrebuje sa 1 ks)
     for (let i = SHIELDS.length - 1; i >= 0; i--) if (t.shields[i] > 0) { k = i + 1; t.shields[i]--; break; }
     t.shT = k; t.shieldMax = k ? SHIELDS[k - 1].cap : 0; t.shield = t.shieldMax;
+    if (dungeon.active && dungeon.mod && dungeon.mod.id === 'shield' && t.team === 1) { t.shT = 3; t.shieldMax = SHIELDS[2].cap; t.shield = t.shieldMax; }
     t.sel = 'ap'; t.cd = 0; t.stun = false; t.fired = false;
   });
   hide('shop'); state = 'play';
   beginTurn((round - 1) % tanks.length);   // začína postupne každý hráč
   banner(biome().icon + ' ' + biome().name + ' · KOLO ' + round + ' – ' + tanks[turnIdx].name + ' začína!', 1600);
+  if (dungeon.active && dungeon.mod) setTimeout(() => banner(dungeonModTag() + ': ' + dungeon.mod.desc, 3400), 1900);
   if (net.active) netPublish();
 }
 function checkRoundEnd() {
@@ -2154,8 +2185,8 @@ function afterRoundEnd() {
       const me = tanks.find(t => t.team === 0), lootItems = [];
       const profMe = me && me.nick ? profiles[nickKey(me.nick)] : null, achBefore = new Set(profMe && profMe.achievements || []), bestBefore = dungeonBestOf(me && me.nick);
       if (won && me) {   // odmena za vyčistené poschodie: peniaze + zbrane (pri bossovi viac a lepšie), nech sa oplatí ísť hlbšie
-        const cash = 150 + floor * 25 + (boss ? 500 + floor * 20 : 0);
-        me.money += cash; lootItems.push({ icon: '💰', label: '+€' + cash, sub: 'Peniaze', color: '#f2c230' });
+        const pay = dungeon.mod ? dungeon.mod.pay : 1, cash = Math.round((150 + floor * 25 + (boss ? 500 + floor * 20 : 0)) * pay);
+        me.money += cash; lootItems.push({ icon: '💰', label: '+€' + cash, sub: dungeon.mod ? dungeonModTag() + ' +' + Math.round((pay - 1) * 100) + ' %' : 'Peniaze', color: '#f2c230' });
         const drops = boss ? (floor >= 15 ? ['nukeS', 'repairBig'] : floor >= 10 ? ['firestorm', 'repairBig'] : ['he', 'repairBig'])
           : (Math.random() < 0.4 ? [['missile', 'repair', 'bounce'][floor % 3]] : []);
         drops.forEach(id => {
@@ -2642,9 +2673,30 @@ function draw() {
   drawWeather();
   drawProjectiles(); drawBeams(); drawParticles(); drawSpecials();
   ctx.restore();
+  drawDarkness();
   ctx.drawImage(vigL.c, 0, 0, W, H);
   drawHud();
   if (showFps) { ctx.fillStyle = '#7CFC7C'; ctx.font = '11px monospace'; ctx.textAlign = 'left'; ctx.fillText(Math.round(1000 / fpsEma) + ' fps · kvalita ' + quality + ' · ×' + SCALE.toFixed(1) + ' · ' + particles.length + ' častíc', 8, H - 8); }
+}
+let darkCv = null;
+function drawDarkness() {   // modifikátor "Tma": čierna vrstva s dierami okolo tankov, striel a výbuchov
+  if (!(dungeon.active && dungeon.mod && dungeon.mod.id === 'dark') || (state !== 'play' && state !== 'roundEnd')) return;
+  const cw = ctx.canvas.width, ch = ctx.canvas.height;
+  if (!darkCv || darkCv.width !== cw || darkCv.height !== ch) { darkCv = document.createElement('canvas'); darkCv.width = cw; darkCv.height = ch; }
+  const d = darkCv.getContext('2d'), z = cam.zoom;
+  d.globalCompositeOperation = 'source-over'; d.setTransform(1, 0, 0, 1, 0, 0); d.clearRect(0, 0, cw, ch);
+  d.fillStyle = 'rgba(0,0,8,.93)'; d.fillRect(0, 0, cw, ch);
+  d.setTransform(SCALE, 0, 0, SCALE, 0, 0); d.globalCompositeOperation = 'destination-out';
+  const hole = (x, y, r, a) => {
+    const sx = (x - cam.x) * z + W / 2, sy = (y - cam.y) * z + H / 2, R = r * z, g = d.createRadialGradient(sx, sy, R * 0.25, sx, sy, R);
+    g.addColorStop(0, 'rgba(0,0,0,' + a + ')'); g.addColorStop(1, 'rgba(0,0,0,0)'); d.fillStyle = g; d.beginPath(); d.arc(sx, sy, R, 0, 6.3); d.fill();
+  };
+  tanks.forEach(t => { if (!t.dead) hole(t.x, t.y - 20, t.team === 0 ? 230 : 100 * (t.k || 1), t.team === 0 ? 1 : 0.55); });
+  projectiles.forEach(p => hole(p.x, p.y, 75, 1));
+  glows.forEach(g => hole(g.x, g.y, g.r * 2.2, clamp(g.life / g.max, 0, 1)));
+  beams.forEach(b => { hole(b.x1, b.y1, 70, 1); hole(b.x2, b.y2, 90, 1); });
+  strikes.forEach(st => hole(st.x, gy(st.x) - 40, 80, 0.8));
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(darkCv, 0, 0); ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
 }
 function drawTurnMarker() {
   if (state !== 'play') return;
@@ -3216,7 +3268,7 @@ function drawHud() {
   const off = n === 2 ? 0 : 78;
   if (n === 2) ctx.fillText(tanks[0].wins + '  :  ' + tanks[1].wins, W / 2, 42 + SAFE_TOP);
   ctx.font = '13px system-ui'; ctx.fillStyle = 'rgba(255,255,255,.7)';
-  ctx.fillText('KOLO ' + round + ' · do ' + WIN_ROUNDS + ' víťazstiev · ' + biome().icon + ' ' + biome().name, W / 2, 62 + off + SAFE_TOP);
+  ctx.fillText('KOLO ' + round + ' · do ' + WIN_ROUNDS + ' víťazstiev · ' + biome().icon + ' ' + biome().name + (dungeonModTag() ? ' · ' + dungeonModTag() : ''), W / 2, 62 + off + SAFE_TOP);
   const wx = W / 2, wy = 84 + off + SAFE_TOP, wl = clamp(wind, -120, 120) * 0.66, B = biome();
   ctx.fillText('VIETOR ' + Math.abs(wind) + (B.gust >= 0.9 ? ' · víchrica (mení smer)' : B.gust >= 0.5 ? ' · nárazový' : '') + (B.altWind ? ' · vo výške silnejší' : ''), wx, wy + 14);
   ctx.strokeStyle = '#9fd0ff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(wx, wy - 4); ctx.lineTo(wx + wl * 0.8, wy - 4); ctx.stroke();
