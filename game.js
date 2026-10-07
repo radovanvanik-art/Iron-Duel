@@ -1460,6 +1460,7 @@ function renderStoryList() {
 }
 $('homeStoryBtn').addEventListener('click', () => { hide('home'); focusFrontierWorld(); renderStoryList(); show('story'); });
 $('storyClose').addEventListener('click', () => { stopGlobeLoop(); hide('story'); show('home'); });
+document.addEventListener('click', e => { if (e.target.closest('.btn,.panelBtn,.dashBtn,.worldTab,.relicCard,.radarBtn,.swb')) tone(520, 340, 0.05, 'square', 0.03); });   // jemné kovové "cvaknutie" pri klikoch v menu (len ak už beží zvuk)
 $('homeDungeonBtn').addEventListener('click', () => { hide('home'); renderDungeonScreen(); show('dungeon'); });
 $('dungeonClose').addEventListener('click', () => { hide('dungeon'); show('home'); });
 $('dungeonEnterBtn').addEventListener('click', () => startDungeon());
@@ -2046,12 +2047,16 @@ function startDungeon() {   // čerstvý vstup do Dungeonu (z domovskej obrazovk
 }
 function renderDungeonScreen() {
   const floor = dungeon.progress.floor, best = dungeon.progress.best, boss = floor % 5 === 0;
-  $('dungeonInfo').innerHTML = 'Aktuálne poschodie: <b>' + floor + '</b>' + (boss ? ' · 👹 poschodie bossa: ' + dungeonBossName(floor) : '') +
-    '<br>Najhlbšie dosiahnuté poschodie: <b>' + best + '</b>' +
-    '<br><small>Ty (a prípadne spoluhráči na tejto obrazovke) proti botom - prestrieľaj sa hlinou k súperom. Pozor: vlastný výbuch v tesnej chodbe zasiahne aj teba!</small>';
+  const g0 = Math.floor((floor - 1) / 5) * 5 + 1, bossFloor = g0 + 4, mod = dungeonModFor(floor);   // veža poschodí po päticiach, na konci každej je boss
+  const seg = Array.from({ length: 5 }, (_, i) => { const f = g0 + i, isBoss = f === bossFloor; return '<div class="dgSeg' + (f < floor ? ' done' : f === floor ? ' now' : '') + (isBoss ? ' boss' : '') + '" title="Poschodie ' + f + '">' + (isBoss ? '👹' : f) + '</div>'; }).join('');
+  const bKind = dungeonBossKind(bossFloor), bossCard = '<div class="dgCard boss"><b>👹 ' + (boss ? 'Boss tohto poschodia' : 'Ďalší boss · poschodie ' + bossFloor) + '</b>' + esc(dungeonBossName(bossFloor).replace('👹 ', '')) + ' · ' + (bKind === 'giant' ? 'obrovský tank s kritickým slabým miestom' : '3 spojené tanky, strieľajú salvou') + '</div>';
+  const bc = BOSS_COLORS.find(c => c.floor === bossFloor + 1 && best < c.floor), prizeCard = bc ? '<div class="dgCard prize"><b>🎁 Odmena za bossa</b><i style="background:' + bc.hex + '"></i>Nová farba tanku <b style="display:inline">' + bc.name + '</b> + odznak + relikvia</div>' : '<div class="dgCard prize"><b>🎁 Odmena za bossa</b>Lup zo zbraní, peniaze a výber relikvie</div>';
+  const modCard = mod ? '<div class="dgCard mod"><b>' + mod.icon + ' Modifikátor: ' + mod.name + ' <small style="color:var(--gold)">(+' + Math.round((mod.pay - 1) * 100) + ' % odmena)</small></b>' + esc(mod.desc) + '</div>' : '';
+  $('dungeonInfo').innerHTML = '<div class="dgHero"><div class="dgNum"><small>POSCHODIE</small>' + floor + '</div><div class="dgMeta">' + (boss ? '<b style="color:#ff7a6a">👹 Poschodie bossa!</b><br>' : '') +
+    'Najhlbšie dosiahnuté: <b>' + best + '</b><div class="dgTrack">' + seg + '</div></div></div>' +
+    '<div class="dgCards">' + (modCard || '') + bossCard + prizeCard + '</div>' +
+    '<div class="dgHelp">Prestrieľaj sa hlinou k súperom. Pozor: vlastný výbuch v tesnej chodbe zasiahne aj teba, a tank, ktorý prepadne pod spodný okraj, je zničený.</div>';
   renderRelics('dungeonRelics');
-  const mod = dungeonModFor(floor);
-  if (mod) $('dungeonInfo').innerHTML += '<br><b style="color:#ffd54a">' + mod.icon + ' Modifikátor: ' + mod.name + '</b> <small>(+' + Math.round((mod.pay - 1) * 100) + ' % odmena)</small><br><small>' + mod.desc + '</small>';
   $('dungeonEnterBtn').textContent = '▶ Vstúpiť · Poschodie ' + floor;
 }
 function renderLoot(arg) {   // tabuľka odmien na konci hry: buď plochý zoznam dlaždíc, alebo skupiny [{title, color, items}] (viac hráčov); dlaždice postupne naskakujú
