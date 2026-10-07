@@ -147,7 +147,7 @@ const WLV_IDS = ['ap', 'missile', 'he', 'bounce', 'ricochet', 'emp', 'empBig', '
 const WLV_MAX = 5, WLV_DMG_STEP = 0.18;
 const wlvCost = lvl => Math.round((350 + 300 * lvl) / 10) * 10;
 const wlvOf = (t, id) => (t && t.wlv && t.wlv[id]) || 0;
-const dmgMul = (t, id) => 1 + WLV_DMG_STEP * wlvOf(t, id);
+const dmgMul = (t, id) => (1 + WLV_DMG_STEP * wlvOf(t, id)) * (hasRelic(t, 'power') ? 1.15 : 1);
 
 // ---------- obtiažnosť (mení silu a nárazovosť vetra) ----------
 const DIFFICULTY = {
@@ -309,6 +309,12 @@ const held = [{}, {}, {}, {}];   // dotykové tlačidlá
 const kb = [{}, {}, {}, {}];     // klávesnica
 
 // ---------- nastavenie hráčov a uloženie hry ----------
+// farby tanku odomykané za bossov Dungeonu (floor = najhlbšie dosiahnuté poschodie potrebné na odomknutie; mimo PALETTE, takže ich boti nikdy nedostanú)
+const BOSS_COLORS = [
+  { id: 'obsidian', hex: '#3a3f4c', name: 'Obsidián', floor: 6,  how: 'Zraz bossa na 5. poschodí Dungeonu' },
+  { id: 'magma',    hex: '#ff3d00', name: 'Magma',    floor: 11, how: 'Zraz bossa na 10. poschodí Dungeonu' },
+  { id: 'platinum', hex: '#e8ecf4', name: 'Platina',  floor: 16, how: 'Zraz bossa na 15. poschodí Dungeonu' },
+];
 const PALETTE = ['#3e8bff', '#e5484d', '#3fbf5f', '#f2c230', '#b06cff', '#ff8a3d', '#2fd0c8', '#ff5fb0', '#9aa5b1', '#8bd450'];
 const KEYSETS = [
   { left: 'KeyA', right: 'KeyD', up: 'KeyW', down: 'KeyS', fire: 'KeyF', ammo: 'KeyG', pdown: 'KeyQ', pup: 'KeyE', hint: 'A D jazda · W S náklon · Q E sila · F streľba · G munícia' },
@@ -371,6 +377,7 @@ function cloudProfileRowToLocal(row) {
     story: { unlocked: clampInt(row.story_unlocked, 1, STORY_MISSIONS.length, 1), done: Array.isArray(row.story_done) ? row.story_done.map(Boolean) : [] },
     achievements: Array.isArray(row.achievements) ? row.achievements.slice() : [],
     perks: row.perks && typeof row.perks === 'object' && !Array.isArray(row.perks) ? Object.assign({}, row.perks) : {},
+    dungeon: row.dungeon_best > 1 ? { floor: row.dungeon_best, best: row.dungeon_best } : null,
   };
 }
 async function cloudFetchProfile(userId) {
@@ -387,13 +394,14 @@ function cloudPush() {   // write-through: po uložení lokálneho profilu potic
     story_loadout: p.storyLoadout, story_unlocked: p.story ? p.story.unlocked : 1, story_done: p.story ? p.story.done : [],
     achievements: Array.isArray(p.achievements) ? p.achievements : [],
     perks: p.perks && typeof p.perks === 'object' ? p.perks : {},
+    dungeon_best: p.dungeon ? Math.max(1, p.dungeon.best | 0) : 1,
   };
   sb.from('profiles').update(payload).eq('id', cloudUser.id).then(({ error }) => {
     if (!error) return;
     console.warn('Supabase sync zlyhal:', error.message);
     if (/perks/i.test(error.message || '') || /column/i.test(error.message || '')) {
       // stĺpec "perks" ešte nie je v databáze (SQL skript sa ešte nespustil) - skús to znova bez neho, nech sa aspoň ostatné štatistiky nestratia
-      const fallback = Object.assign({}, payload); delete fallback.perks;
+      const fallback = Object.assign({}, payload); delete fallback.perks; delete fallback.dungeon_best;
       sb.from('profiles').update(fallback).eq('id', cloudUser.id).then(({ error: e2 }) => { if (e2) console.warn('Supabase sync (fallback) zlyhal:', e2.message); });
     }
   });
@@ -426,6 +434,9 @@ async function enterCloudSession(user) {   // zavolá sa po úspešnom Google pr
     profiles[key] = cloudProfileRowToLocal(row);
     if (prevP && prevP.daily) profiles[key].daily = prevP.daily;
     if (prevP && prevP.weekly) profiles[key].weekly = prevP.weekly;
+    if (prevP && prevP.dungeonMods) profiles[key].dungeonMods = prevP.dungeonMods;   // počítadlá odznakov Dungeonu a priepasti sú len lokálne
+    if (prevP && prevP.abyss) profiles[key].abyss = prevP.abyss;
+    if (prevP && prevP.dungeon && (!profiles[key].dungeon || prevP.dungeon.best > profiles[key].dungeon.best)) profiles[key].dungeon = prevP.dungeon;   // postup v Dungeone: platí lepší z cloudu a lokálneho
     cloudUser = { id: user.id, nick: row.nick };
   }
   setup.players[0].nick = row.nick; setup.players[0].name = row.nick;
@@ -585,6 +596,8 @@ function clampInt(v, a, b, d) { v = parseInt(v, 10); return isNaN(v) ? d : Math.
 function fixColors() {   // každý hráč musí mať inú farbu
   const used = new Set();
   setup.players.forEach(p => {
+    const bc = BOSS_COLORS.find(c => c.hex === String(p.color).toLowerCase());   // zamknutú farbu bossa (iný účet / zmazaný postup) vráť na bežnú
+    if (bc && !bossColorUnlocked(bc, p.nick)) p.color = PALETTE.find(c => !used.has(c.toLowerCase())) || PALETTE[0];
     if (used.has(p.color.toLowerCase())) p.color = PALETTE.find(c => !used.has(c.toLowerCase())) || p.color;
     used.add(p.color.toLowerCase());
   });
@@ -930,11 +943,11 @@ function storyProgressForNick(nick) {   // postup kampane patrí k profilu prez�
 }
 // ---------- postup režimu Dungeon (samostatný od kampane, ale ukladá sa rovnakým vzorom - pozri vyššie) ----------
 const DUNGEON_KEY = 'ironDuelDungeon_v1';   // záložné/hosťovské úložisko, rovnaký vzor ako STORY_KEY
-function defaultDungeonProgress() { return { floor: 1, best: 1 }; }
+function defaultDungeonProgress() { return { floor: 1, best: 1, relics: [], pending: null }; }
 function loadLegacyGlobalDungeonProgress() {
   try {
     const v = JSON.parse(localStorage.getItem(DUNGEON_KEY));
-    if (v && typeof v === 'object') return { floor: clampInt(v.floor, 1, 999999, 1), best: clampInt(v.best, 1, 999999, 1) };
+    if (v && typeof v === 'object') return { floor: clampInt(v.floor, 1, 999999, 1), best: clampInt(v.best, 1, 999999, 1), relics: Array.isArray(v.relics) ? v.relics : [], pending: Array.isArray(v.pending) ? v.pending : null };
   } catch (_) {}
   return null;
 }
@@ -944,7 +957,45 @@ function dungeonProgressForNick(nick) {
   if (!p.dungeon) { p.dungeon = loadLegacyGlobalDungeonProgress() || defaultDungeonProgress(); saveProfiles(); }
   return p.dungeon;
 }
-let dungeon = { active: false, progress: null };
+// relikvie: trvalé bonusy v Dungeone (patria profilu, prežijú prehru). Po každom bossovi si hráč vyberie 1 z 3 ešte nezískaných.
+const RELICS = {
+  plating: { icon: '🛡️', name: 'Pancierová vložka', desc: '+30 max. životov' },
+  power:   { icon: '💥', name: 'Zosilnená munícia', desc: '+15 % poškodenia všetkých zbraní' },
+  regen:   { icon: '❤️', name: 'Opravárske drony', desc: '+8 životov na začiatku tvojho ťahu' },
+  tank:    { icon: '⛽', name: 'Rezervná nádrž', desc: '+60 paliva navyše' },
+  cash:    { icon: '💰', name: 'Zberateľ', desc: '+25 % peňazí za poschodie' },
+  scout:   { icon: '🎒', name: 'Prieskumník', desc: 'Každé poschodie ti nájde munícii navyše (istý lup)' },
+};
+const hasRelic = (t, id) => !!(t && t.team === 0 && typeof dungeon !== 'undefined' && dungeon.active && dungeon.progress && (dungeon.progress.relics || []).includes(id));
+function rollRelicChoices() {
+  const have = new Set(dungeon.progress.relics || []), pool = Object.keys(RELICS).filter(id => !have.has(id));
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  return pool.slice(0, 3);
+}
+function renderRelics(boxId) {   // zoznam získaných relikvií + (ak čaká výber) tri karty na výber; použité na koncovej obrazovke aj na obrazovke Dungeonu
+  const box = $(boxId); if (!box) return;
+  const pr = dungeon.progress, own = (pr.relics || []).map(id => RELICS[id]).filter(Boolean);
+  let html = '';
+  if (pr.pending && pr.pending.length) {
+    html += '<div class="relicHead">🏺 Vyber si relikviu</div><div class="relicRow">' + pr.pending.map(id => RELICS[id] ? '<button class="relicCard" data-relic="' + id + '"><span class="ri2">' + RELICS[id].icon + '</span><b>' + esc(RELICS[id].name) + '</b><small>' + esc(RELICS[id].desc) + '</small></button>' : '').join('') + '</div>';
+  }
+  if (own.length) html += '<div class="relicOwn">Relikvie: ' + own.map(r => '<span title="' + esc(r.name + ' – ' + r.desc) + '">' + r.icon + '</span>').join(' ') + '</div>';
+  box.innerHTML = html; box.style.display = html ? '' : 'none';
+  const pend = !!(pr.pending && pr.pending.length);
+  if (boxId === 'endRelics') $('dungeonNextBtn').disabled = pend; else $('dungeonEnterBtn').disabled = pend;
+}
+function pickRelic(id) {
+  const pr = dungeon.progress; if (!pr.pending || !pr.pending.includes(id) || !RELICS[id]) return;
+  pr.relics = (pr.relics || []).concat(id); pr.pending = null; saveDungeonProgress();
+  banner(RELICS[id].icon + ' Relikvia: ' + RELICS[id].name, 2200); tone(600, 1200, 0.25, 'triangle', 0.07);
+  renderRelics('endRelics'); renderRelics('dungeonRelics');
+}
+function dungeonBestOf(nick) {   // najhlbšie poschodie profilu (hosť = záložné úložisko)
+  const p = nick ? profiles[nickKey(nick)] : null;
+  return p ? (p.dungeon && p.dungeon.best) || 1 : (loadLegacyGlobalDungeonProgress() || defaultDungeonProgress()).best;
+}
+const bossColorUnlocked = (c, nick) => dungeonBestOf(nick) >= c.floor;
+let dungeon = { active: false, progress: null, mod: null };
 function refreshDungeonProgressSource() {
   const nick = setup.players[0].nick;
   dungeon.progress = nick ? dungeonProgressForNick(nick) : (loadLegacyGlobalDungeonProgress() || defaultDungeonProgress());
@@ -1097,6 +1148,7 @@ function worldUnlocked(w) { const wm = worldMissions(w); return !wm.length || wm
 function profileWorldUnlocked(prof, w) { const wm = worldMissions(w); return !wm.length || wm[0].i < (prof.story ? prof.story.unlocked : 1); }   // rovnaké ako worldUnlocked(), ale pre ľubovoľný profil (nielen aktuálne zobrazenú kampaň)
 
 // ---------- odznaky (achievementy) - uložené v profile (profiles[key].achievements), zrkadlené aj do Supabase ako pri zvyšku profilu ----------
+const modN = (p, kind, id) => ((p.dungeonMods || {})[kind] || {})[id] || 0;   // počítadlá modifikátorov Dungeonu v profile: cleared/flawless podľa id modifikátora
 const ACHIEVEMENTS = [
   { id: 'prve_vitazstvo', icon: '🥇', title: 'Prvé víťazstvo', desc: 'Vyhraj svoj prvý zápas.', check: p => p.wins >= 1 },
   { id: 'desiatka', icon: '🏅', title: 'Desiatka', desc: 'Vyhraj 10 zápasov.', check: p => p.wins >= 10 },
@@ -1112,7 +1164,16 @@ const ACHIEVEMENTS = [
   { id: 'cela_kampan', icon: '🏆', title: 'Veliteľ slnečnej sústavy', desc: 'Dokonči celú kampaň - Zem, Mesiac, Mars aj Venušu.', check: p => !!p.story && p.story.unlocked >= STORY_MISSIONS.length },
   { id: 'vytrvalec', icon: '⏱️', title: 'Vytrvalec', desc: 'Odohraj 150 kôl.', check: p => p.rounds >= 150 },
   { id: 'dungeon_5', icon: '🕯️', title: 'Prieskumník dungeonu', desc: 'Dosiahni 5. poschodie Dungeonu.', check: p => !!p.dungeon && p.dungeon.best >= 5 },
-  { id: 'dungeon_boss1', icon: '👹', title: 'Lovec bossov', desc: 'Zraz prvého bossa Dungeonu.', check: p => !!p.dungeon && p.dungeon.best >= 6 },
+  { id: 'mod_dark', icon: '🌑', title: 'Nočný duch', desc: 'Vyčisti poschodie s modifikátorom Tma bez straty životov.', check: p => modN(p, 'flawless', 'dark') >= 1 },
+  { id: 'mod_storm', icon: '🌪️', title: 'Pán búrky', desc: 'Vyčisti poschodie s modifikátorom Búrka v šachte bez straty životov.', check: p => modN(p, 'flawless', 'storm') >= 1 },
+  { id: 'mod_rockfall', icon: '🪨', title: 'Tvrdá hlava', desc: 'Vyčisti 3 poschodia s modifikátorom Padajúce kamene.', check: p => modN(p, 'cleared', 'rockfall') >= 3 },
+  { id: 'mod_all', icon: '🎯', title: 'Majster modifikátorov', desc: 'Vyčisti aspoň jedno poschodie s každým z 6 modifikátorov.', check: p => Object.keys(DUNGEON_MODS).every(id => modN(p, 'cleared', id) >= 1) },
+  { id: 'mod_flawless5', icon: '💎', title: 'Nedotknuteľný', desc: 'Vyčisti 5 poschodí s modifikátorom bez straty životov.', check: p => Object.keys(DUNGEON_MODS).reduce((a, id) => a + modN(p, 'flawless', id), 0) >= 5 },
+  { id: 'hrobar', icon: '🕳️', title: 'Hrobár', desc: 'Zhoď súpera do priepasti.', check: p => (p.abyss || 0) >= 1 },
+  { id: 'hrobar5', icon: '⚰️', title: 'Pohrebný ústav', desc: 'Zhoď do priepasti 5 súperov.', check: p => (p.abyss || 0) >= 5 },
+  { id: 'dungeon_boss1', icon: '👹', title: 'Lovec bossov', desc: 'Zraz obra na 5. poschodí Dungeonu. Odmena: farba tanku Obsidián.', check: p => !!p.dungeon && p.dungeon.best >= 6 },
+  { id: 'dungeon_boss2', icon: '🔱', title: 'Zlomiteľ trojice', desc: 'Zraz trojicu spojených tankov na 10. poschodí. Odmena: farba tanku Magma.', check: p => !!p.dungeon && p.dungeon.best >= 11 },
+  { id: 'dungeon_boss3', icon: '👑', title: 'Pán hlbín', desc: 'Zraz bossa na 15. poschodí Dungeonu. Odmena: farba tanku Platina.', check: p => !!p.dungeon && p.dungeon.best >= 16 },
   { id: 'dungeon_10', icon: '⛏️', title: 'Baník', desc: 'Dosiahni 10. poschodie Dungeonu.', check: p => !!p.dungeon && p.dungeon.best >= 10 },
   { id: 'dungeon_25', icon: '💣', title: 'Hlbinný veliteľ', desc: 'Dosiahni 25. poschodie Dungeonu.', check: p => !!p.dungeon && p.dungeon.best >= 25 },
 ];
@@ -1399,9 +1460,11 @@ function renderStoryList() {
 }
 $('homeStoryBtn').addEventListener('click', () => { hide('home'); focusFrontierWorld(); renderStoryList(); show('story'); });
 $('storyClose').addEventListener('click', () => { stopGlobeLoop(); hide('story'); show('home'); });
+document.addEventListener('click', e => { if (e.target.closest('.btn,.panelBtn,.dashBtn,.worldTab,.relicCard,.radarBtn,.swb')) tone(520, 340, 0.05, 'square', 0.03); });   // jemné kovové "cvaknutie" pri klikoch v menu (len ak už beží zvuk)
 $('homeDungeonBtn').addEventListener('click', () => { hide('home'); renderDungeonScreen(); show('dungeon'); });
 $('dungeonClose').addEventListener('click', () => { hide('dungeon'); show('home'); });
 $('dungeonEnterBtn').addEventListener('click', () => startDungeon());
+for (const id of ['endRelics', 'dungeonRelics']) $(id).addEventListener('click', e => { const c = e.target.closest('[data-relic]'); if (c) pickRelic(c.dataset.relic); });
 $('dungeonNextBtn').addEventListener('click', () => dungeonEnterFloor());
 $('dungeonRetryBtn').addEventListener('click', () => dungeonEnterFloor());
 $('dungeonExitBtn').addEventListener('click', () => { hide('end'); toMenu(); });
@@ -1455,7 +1518,7 @@ function serializeTank(t) {
     ammo: Object.fromEntries(ORDER.map(k => [k, t.ammo[k] === Infinity ? 'inf' : t.ammo[k]])),
     bot: t.bot, speedLvl: t.speedLvl, armorLvl: t.armorLvl, fuelLvl: t.fuelLvl, wlv: Object.assign({}, t.wlv),
     wins: t.wins, streak: t.streak, level: t.level, xp: t.xp, shields: t.shields.slice(), shT: t.shT, shieldMax: t.shieldMax,
-    fuel: t.fuel, rep: Object.assign({}, t.rep), repLast: Object.assign({}, t.repLast),
+    fuel: t.fuel, rep: Object.assign({}, t.rep), repLast: Object.assign({}, t.repLast), tot: { money: t.tot.money, xp: t.tot.xp, levels: t.tot.levels.slice() },
     x: t.x, y: t.y, vx: t.vx, power: t.power, tilt: t.tilt, face: t.face, ang: t.ang, hp: t.hp, shield: t.shield, sel: t.sel,
     dead: !!t.dead, fired: !!t.fired, stun: !!t.stun, questId: t.quest ? t.quest.id : null, questDone: !!t.questDone, tookDmg: !!t.tookDmg,
   };
@@ -1497,6 +1560,7 @@ function syncPassiveUI() {   // pasívne zariadenie: prekresli obrazovky podľa 
     const w = tanks.find(t => t.wins >= WIN_ROUNDS) || tanks.slice().sort((a, b) => b.wins - a.wins)[0];
     $('endTitle').textContent = w.name + ' vyhráva zápas!'; $('endTitle').style.color = w.color;
     $('endSub').innerHTML = 'Zápas skončil.';
+    renderLoot(matchLootGroups(w, null));
     $('endNormalBtns').style.display = ''; $('endStoryBtns').style.display = 'none';
     $('end').classList.remove('win', 'lose');   // pasívne zariadenie v multiplayeri - generická bitevná scéna
     show('end');
@@ -1636,6 +1700,8 @@ $('onlineClose').addEventListener('click', () => { netLeave(); hide('online'); s
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const gy = x => ground[clamp(Math.round(x), 0, WORLD_W)];
+// priepasť: terén sa dá vykopať aj pod spodný okraj arény (H) a tank, ktorý tam spadne, je zničený (pozri swallowed)
+const ABYSS = 220;
 
 // ---------- zvuk ----------
 let actx = null;
@@ -1695,27 +1761,57 @@ function makeTank(id, cfg) {
     money: START_MONEY + 100 * perkRank(prof, 'cash'), ammo: Object.fromEntries(ORDER.map(k => [k, k === 'ap' ? Infinity : 0])), bot: cfg.bot | 0, botSt: null, hudRects: [],
     speedLvl: 0, armorLvl: perkRank(prof, 'armor'), fuelLvl: perkRank(prof, 'fuel'), wlv: Object.fromEntries(WLV_IDS.map(k => [k, 0])), wins: 0, streak: 0,
     level: prof ? clampInt(prof.level, 1, MAX_LEVEL, 1) : 1, xp: prof ? Math.max(0, +prof.xp || 0) : 0, shields: new Array(10).fill(0), shT: 0, shieldMax: 0,
-    fuel: FUEL_START, noFuelT: 0, rep: {}, repLast: {},
+    fuel: FUEL_START, noFuelT: 0, rep: {}, repLast: {}, tot: { money: 0, xp: 0, levels: [] },   // tot = súčty za celý zápas/misiu (rep sa nuluje každé kolo) - pre tabuľku odmien na konci
     x: 0, y: 0, vx: 0, power: 100, tilt: 0, face: 1, ang: 50,
     hp: BASE_HP, shield: 0, sel: 'ap', cd: 0, emp: 0, dead: false, prevAmmoBtn: '',
   };
 }
-const maxHp = t => BASE_HP + HP_PER_ARMOR * t.armorLvl + HP_PER_LEVEL * (t.level - 1);
-const fuelCap = t => FUEL_CAP + 50 * t.fuelLvl;
+// bossovia Dungeonu: jedna entita s vlastným hitboxom - 'giant' = jeden obrovský tank, 'triple' = tri tanky spojené pancierovými mostmi (salva troch hlavní)
+// s = mierka trupu, hw/hh = polšírka/výška zásahovej zóny, gap = rozstup trojice (len triple), hpMul/dmgMul = násobok životov / poškodenia
+const BOSS_KINDS = {
+  giant:  { s: 2.5, hw: 150, hh: 84, hpMul: 3.4, dmgMul: 1.3 },
+  triple: { s: 0.9, hw: 165, hh: 62, hpMul: 3.0, dmgMul: 1, gap: 118 },
+};
+const maxHp = t => Math.round((BASE_HP + HP_PER_ARMOR * t.armorLvl + HP_PER_LEVEL * (t.level - 1) + (hasRelic(t, 'plating') ? 30 : 0)) * (t.boss ? t.boss.hpMul : 1));
+const tankHW = t => t.boss ? t.boss.hw : 24;          // polšírka zásahovej zóny
+const tankSpan = t => t.boss ? t.boss.hw * 0.6 : 18;   // polovičný rozchod, z ktorého sa berie sklon terénu pod tankom
+const bossPhase = t => t.bossPhase || 0;   // 0 = plný výkon, 1 = pod 66 % životov, 2 = pod 33 % (pozri onBossPhase)
+// posun hlavní pozdĺž trupu; trojica prichádza o tank sprava (fáza 1) a zľava (fáza 2), obor v 2. fáze pália dvojitou salvou
+const bossBarrels = t => !t.boss ? [0] : t.boss.gap ? [-t.boss.gap, 0, t.boss.gap].filter(o => !bossWreck(t, o)) : (bossPhase(t) >= 2 ? [-22, 22] : [0]);
+const bossBarrelsAll = t => t.boss && t.boss.gap ? [-t.boss.gap, 0, t.boss.gap] : [0];
+const bossWreck = (t, off) => !!t.boss && !!t.boss.gap && ((off > 0 && bossPhase(t) >= 1) || (off < 0 && bossPhase(t) >= 2));   // zničený segment trojice
+function bossWeakPoint(t) {   // červené "oko" obra - zásah sem = kritický (dvojnásobok)
+  if (!t.boss || t.boss.gap) return null; const h = t.artPivotH || 40, lx = -h * 0.5, ly = -h * 0.5, c = Math.cos(t.tilt), sn = Math.sin(t.tilt);
+  return { x: t.x + lx * c - ly * sn, y: t.y + 1 + lx * sn + ly * c };
+}
+function onBossPhase(t, phase) {
+  t.bossPhase = phase;
+  const giant = !t.boss.gap, txt = giant ? (phase === 1 ? '🔥 ZBESILOSŤ! Obor zosilnel' : '💢 DVOJITÁ SALVA!') : (phase === 1 ? '💥 Pravý tank zničený!' : '💥 Ľavý tank zničený! Zostal posledný');
+  banner(t.name + ' · ' + txt, 1800); shake = 22; tone(90, 40, 0.5, 'sawtooth', 0.12); noise(0.5, 0.3, 400); vibrate(60);
+  if (giant) t.boss.dmgMul *= 1.25;
+  const cx = giant ? t.x : t.x + (phase === 1 ? 1 : -1) * t.boss.gap;
+  for (let i = 0; i < 70; i++) { const a = rand(0, 6.28), v = rand(60, 320); spark(cx + rand(-40, 40), t.y - 30 * (t.k || 1), Math.cos(a) * v, Math.sin(a) * v - 90, ['#ff7043', '#ffd54a', '#444', '#ff3d00'][i % 4], rand(.5, 1.3), rand(3, 8), 300, i % 4 === 2 ? '' : 'glow'); }
+  floatText(t.x, t.y - t.boss.hh - 50, giant ? 'FÁZA ' + (phase + 1) : 'TANK ZNIČENÝ', '#ff6a4a');
+}
+function makeBoss(t, kind) { t.boss = Object.assign({ kind }, BOSS_KINDS[kind]); t.k = t.boss.s; t.artPivotH = tankArtPivotH(t.color) * t.k; }
+const fuelCap = t => FUEL_CAP + 50 * t.fuelLvl + (hasRelic(t, 'tank') ? 60 : 0);
 
 function reward(t, amount, key) {
   if (!t || amount <= 0) return;
   if (t.nick && key !== 'level') amount = Math.round(amount * (1 + 0.1 * perkRank(getProfile(t.nick), 'income')));   // "Vojnová ekonomika" - bonus len na zárobky za hru, nie na odmenu za level-up
   t.money += amount; t.rep[key] = (t.rep[key] || 0) + amount;
+  if (t.tot) t.tot.money += amount;
 }
 function addXp(t, n) {
   if (!t || t.level >= MAX_LEVEL) return;
   if (t.nick) n = Math.round(n * (1 + 0.1 * perkRank(getProfile(t.nick), 'xp')));   // "Skúsený veliteľ" - bonus XP
   t.xp += n; t.rep.xp = (t.rep.xp || 0) + n;
+  if (t.tot) t.tot.xp += n;
   while (t.level < MAX_LEVEL && t.xp >= xpToNext(t.level)) {
     t.xp -= xpToNext(t.level); t.level++;
     reward(t, levelBonus(t.level), 'level');
     (t.rep.levels = t.rep.levels || []).push(t.level);
+    if (t.tot) t.tot.levels.push(t.level);
     floatText(t.x, t.y - 70, 'LEVEL ' + t.level + '!', '#ffd54a');
     tone(500, 1400, 0.4, 'triangle', 0.08);
   }
@@ -1724,16 +1820,17 @@ function addXp(t, n) {
 }
 
 function placeTank(t, x) {
-  t.x = x; t.y = groundAvg(x); t.tilt = tiltAt(x);
+  if (t.boss) x = clamp(x, tankHW(t) + 20, WORLD_W - tankHW(t) - 20);   // široký boss sa nesmie vyliezť mimo mapy
+  t.x = x; t.y = groundAvg(x, tankSpan(t)); t.tilt = tiltAt(x, tankSpan(t));
   t.face = x < WORLD_W / 2 ? 1 : -1; t.ang = t.face > 0 ? 50 : 130;
-  t.dead = false; t.cd = 0; t.emp = 0; t.stun = false; t.fired = false; t.sel = 'ap';
+  t.dead = false; t.sinkWarn = false; t.sinkTurns = 0; t.cd = 0; t.emp = 0; t.stun = false; t.fired = false; t.sel = 'ap';
 }
-function groundAvg(x) { return (gy(x - 18) + gy(x + 18)) / 2; }
-function tiltAt(x) { return Math.atan2(gy(x + 18) - gy(x - 18), 36); }
-function pivot(t) { const h = t.artPivotH || 22; return { x: t.x + h * Math.sin(t.tilt), y: t.y - h * Math.cos(t.tilt) }; }
-function muzzle(t) {
-  const p = pivot(t), a = t.ang * Math.PI / 180, art = tankArt[TANK_COLOR_NAME[String(t.color).toLowerCase()]];
-  const L = 36 * ((art && art.loaded) ? TANK_TARGET_W / 76 : 1);
+function groundAvg(x, r = 18) { return (gy(x - r) + gy(x + r)) / 2; }
+function tiltAt(x, r = 18) { return Math.atan2(gy(x + r) - gy(x - r), 2 * r); }
+function pivot(t, off = 0) { const h = t.artPivotH || 22; return { x: t.x + h * Math.sin(t.tilt) + off * Math.cos(t.tilt), y: t.y - h * Math.cos(t.tilt) + off * Math.sin(t.tilt) }; }
+function muzzle(t, off = 0) {   // off = posun hlavne pozdĺž trupu (trojitý boss má tri hlavne)
+  const p = pivot(t, off), a = t.ang * Math.PI / 180, art = tankArt[TANK_COLOR_NAME[String(t.color).toLowerCase()]];
+  const L = 36 * ((art && art.loaded) ? TANK_TARGET_W / 76 : 1) * (t.k || 1);
   return { x: p.x + Math.cos(a) * L, y: p.y - Math.sin(a) * L, dx: Math.cos(a), dy: -Math.sin(a) };
 }
 
@@ -1806,7 +1903,7 @@ function genArena(key) {
   rollWind();
 }
 const spawnXs = n => {
-  if (WORLD_W === W) return n === 2 ? [135, 1145] : n === 3 ? [135, 640, 1145] : [135, 468, 812, 1145];   // pri normálnej mape presne pôvodné hodnoty (nič sa vizuálne nemení)
+  if (WORLD_W === W && n <= 4) return n === 2 ? [135, 1145] : n === 3 ? [135, 640, 1145] : [135, 468, 812, 1145];   // pri normálnej mape presne pôvodné hodnoty (nič sa vizuálne nemení)
   const margin = 135;
   return Array.from({ length: n }, (_, i) => Math.round(margin + (WORLD_W - 2 * margin) * i / (n - 1)));
 };
@@ -1821,7 +1918,7 @@ function obTop(o) { return o.base - o.h; }
 function carve(cx, cy, r) {
   for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(WORLD_W, Math.ceil(cx + r)); x++) {
     const dx = x - cx, dy = Math.sqrt(Math.max(0, r * r - dx * dx));
-    if (ground[x] >= cy - dy && ground[x] < cy + dy) ground[x] = Math.min(H, cy + dy);
+    if (ground[x] >= cy - dy && ground[x] < cy + dy) ground[x] = Math.min(H + ABYSS, cy + dy);
   }
   decor = decor.filter(d => Math.abs(gy(d.x) - d.y0) < 14);
   trees = trees.filter(tr => Math.abs(gy(tr.x) - tr.y0) < 20);
@@ -1883,25 +1980,51 @@ function toMenu() {
   refreshContinue(); renderSetup(); renderHome(); show('home');
 }
 // ---------- režim Dungeon: podzemné poschodia proti botom, naposledy stojaci tím vyhráva, nekonečná veža s bossom každých 5 poschodí ----------
-const DUNGEON_BOSS_NAMES = ['👹 Krtko Obor', '👹 Pán Štôlne', '👹 Jadro Hory', '👹 Žeravý Tyran', '👹 Posledný Strážca'];
+// modifikátory poschodí: nebossové poschodia od 2. majú (~75 %) jedno pravidlo navyše, deterministicky podľa čísla poschodia (retry = rovnaké pravidlo);
+// pay = násobok peňažnej odmeny za poschodie
+const DUNGEON_MODS = {
+  dark:     { icon: '🌑', name: 'Tma',                 pay: 1.25, desc: 'Vidíš len okolie svojho tanku a striel. Nepriateľov nájdeš podľa výbuchov a obrysov.' },
+  shield:   { icon: '💠', name: 'Regeneračné štíty',   pay: 1.3,  desc: 'Nepriatelia majú štít, ktorý sa im na začiatku každého ťahu mierne dopĺňa.' },
+  rockfall: { icon: '🪨', name: 'Padajúce kamene',     pay: 1.2,  desc: 'Strop sa drolí - každý ťah dopadne na náhodné miesto salva kameňov. Sleduj červené výstrahy!' },
+  storm:    { icon: '🌪', name: 'Búrka v šachte',      pay: 1.15, desc: 'Silný vietor mení smer každý ťah - počítaj s ním pri mierení.' },
+  armor:    { icon: '🛡', name: 'Obrnení nájazdníci',  pay: 1.3,  desc: 'Nepriatelia majú o 3 úrovne brnenia viac (výdržnejší).' },
+  swarm:    { icon: '👥', name: 'Presila',             pay: 1.2,  desc: 'O jedného nepriateľa viac, ale slabšieho.' },
+};
+function dungeonModFor(floor) {
+  if (floor < 2 || floor % 5 === 0) return null;   // 1. poschodie je zoznámenie, bossovia sú show sami o sebe
+  const h = Math.imul(floor, 2654435761) >>> 0;
+  if (h % 4 === 0) return null;
+  const keys = Object.keys(DUNGEON_MODS); let id = keys[(floor + Math.floor(floor / 6)) % keys.length];   // rotácia, nech sa pravidlá pravidelne striedajú všetky
+  if (id === 'swarm' && dungeonBotCount(floor, false) >= 4) id = 'armor';   // viac ako 4 súperov sa nezmestí na obrazovku
+  return Object.assign({ id }, DUNGEON_MODS[id]);
+}
+const dungeonModTag = () => dungeon.active && dungeon.mod ? dungeon.mod.icon + ' ' + dungeon.mod.name : '';
+const DUNGEON_BOSSES = {   // bossovia sa striedajú: 5. poschodie obor, 10. trojica spojených tankov, 15. obor ... (každé ďalšie kolo je pomenované zvlášť)
+  giant:  ['👹 Krtko Obor', '👹 Jadro Hory', '👹 Posledný Strážca'],
+  triple: ['👹 Trojča Štôlne', '👹 Cerberus Hlbín', '👹 Žeravá Trojica'],
+};
+const dungeonBossKind = floor => (Math.floor(floor / 5) % 2) ? 'giant' : 'triple';
+const dungeonBossName = floor => { const kind = dungeonBossKind(floor), list = DUNGEON_BOSSES[kind]; return list[Math.min(list.length - 1, Math.floor((Math.floor(floor / 5) - 1) / 2))]; };
 function dungeonBotCount(floor, boss) { return boss ? 1 : Math.min(4, 1 + Math.floor((floor - 1) / 3)); }
 function dungeonBotLevel(floor, boss) { return boss ? 3 : clampInt(1 + Math.floor((floor - 1) / 4), 1, 3); }
 function buildDungeonEnemies(floor, startId) {
-  const boss = floor % 5 === 0, n = dungeonBotCount(floor, boss), lvl = dungeonBotLevel(floor, boss);
+  const boss = floor % 5 === 0, mid = dungeon.mod && dungeon.mod.id, n = Math.min(4, dungeonBotCount(floor, boss) + (mid === 'swarm' ? 1 : 0)), lvl = clampInt(dungeonBotLevel(floor, boss) - (mid === 'swarm' ? 1 : 0), 1, 3);
   const used = new Set(tanks.map(t => t.color.toLowerCase())), out = [];
   for (let i = 0; i < n; i++) {
     const color = PALETTE.find(c => !used.has(c.toLowerCase())) || PALETTE[(startId + i) % PALETTE.length];
     used.add(color.toLowerCase());
-    const name = boss ? DUNGEON_BOSS_NAMES[Math.min(DUNGEON_BOSS_NAMES.length - 1, Math.floor(floor / 5) - 1)] : ('Nájazdník ' + (startId + i + 1));
+    const name = boss ? dungeonBossName(floor) : ('Nájazdník ' + (startId + i + 1));
     const t = makeTank(startId + i, { name, color, nick: null, bot: lvl, team: 1 });
+    if (boss) makeBoss(t, dungeonBossKind(floor));
     t.money = Math.round(420 + floor * 55 + (boss ? 700 : 0));
-    t.armorLvl = Math.min(6, Math.floor(floor / 4) + (boss ? 2 : 0));
+    t.armorLvl = Math.min(mid === 'armor' ? 9 : 6, Math.floor(floor / 4) + (boss ? 2 : 0) + (mid === 'armor' ? 3 : 0));
     botShop(t);
     out.push(t);
   }
   return out;
 }
-function dungeonEnterFloor() {   // spoločné jadro pre vstup na poschodie - hráčov tank (peniaze, munícia, brnenie) sa NEVYTVÁRA nanovo,
+function dungeonEnterFloor() {
+  dungeon.mod = dungeonModFor(dungeon.progress.floor);   // spoločné jadro pre vstup na poschodie - hráčov tank (peniaze, munícia, brnenie) sa NEVYTVÁRA nanovo,
   // len sa k nemu domontujú noví (silnejší) nepriatelia pre aktuálne poschodie - výzbroj sa tak naprieč poschodiami hromadí
   const humans = tanks.filter(t => t.team === 0);
   tanks = humans.concat(buildDungeonEnemies(dungeon.progress.floor, humans.length));
@@ -1910,7 +2033,7 @@ function dungeonEnterFloor() {   // spoločné jadro pre vstup na poschodie - hr
   buildPads(); enterShop();
   hide('dungeon'); hide('menu'); hide('end'); hide('home');
   const floor = dungeon.progress.floor;
-  $('shopTitle').textContent = '⛏ Dungeon · Poschodie ' + floor + (floor % 5 === 0 ? ' · 👹 BOSS' : '');
+  $('shopTitle').textContent = '⛏ Dungeon · Poschodie ' + floor + (floor % 5 === 0 ? ' · 👹 BOSS: ' + dungeonBossName(floor) + (dungeonBossKind(floor) === 'giant' ? ' (obrovský tank)' : ' (3 spojené tanky)') : (dungeon.mod ? ' · ' + dungeonModTag() : ''));
 }
 function startDungeon() {   // čerstvý vstup do Dungeonu (z domovskej obrazovky) - tu sa tank hráča vytvára nanovo so štartovacou výzbrojou
   story.active = false; story.idx = null; document.body.classList.remove('storymode');
@@ -1924,10 +2047,62 @@ function startDungeon() {   // čerstvý vstup do Dungeonu (z domovskej obrazovk
 }
 function renderDungeonScreen() {
   const floor = dungeon.progress.floor, best = dungeon.progress.best, boss = floor % 5 === 0;
-  $('dungeonInfo').innerHTML = 'Aktuálne poschodie: <b>' + floor + '</b>' + (boss ? ' · 👹 poschodie bossa' : '') +
-    '<br>Najhlbšie dosiahnuté poschodie: <b>' + best + '</b>' +
-    '<br><small>Ty (a prípadne spoluhráči na tejto obrazovke) proti botom - prestrieľaj sa hlinou k súperom. Pozor: vlastný výbuch v tesnej chodbe zasiahne aj teba!</small>';
+  const g0 = Math.floor((floor - 1) / 5) * 5 + 1, bossFloor = g0 + 4, mod = dungeonModFor(floor);   // veža poschodí po päticiach, na konci každej je boss
+  const seg = Array.from({ length: 5 }, (_, i) => { const f = g0 + i, isBoss = f === bossFloor; return '<div class="dgSeg' + (f < floor ? ' done' : f === floor ? ' now' : '') + (isBoss ? ' boss' : '') + '" title="Poschodie ' + f + '">' + (isBoss ? '👹' : f) + '</div>'; }).join('');
+  const bKind = dungeonBossKind(bossFloor), bossCard = '<div class="dgCard boss"><b>👹 ' + (boss ? 'Boss tohto poschodia' : 'Ďalší boss · poschodie ' + bossFloor) + '</b>' + esc(dungeonBossName(bossFloor).replace('👹 ', '')) + ' · ' + (bKind === 'giant' ? 'obrovský tank s kritickým slabým miestom' : '3 spojené tanky, strieľajú salvou') + '</div>';
+  const bc = BOSS_COLORS.find(c => c.floor === bossFloor + 1 && best < c.floor), prizeCard = bc ? '<div class="dgCard prize"><b>🎁 Odmena za bossa</b><i style="background:' + bc.hex + '"></i>Nová farba tanku <b style="display:inline">' + bc.name + '</b> + odznak + relikvia</div>' : '<div class="dgCard prize"><b>🎁 Odmena za bossa</b>Lup zo zbraní, peniaze a výber relikvie</div>';
+  const modCard = mod ? '<div class="dgCard mod"><b>' + mod.icon + ' Modifikátor: ' + mod.name + ' <small style="color:var(--gold)">(+' + Math.round((mod.pay - 1) * 100) + ' % odmena)</small></b>' + esc(mod.desc) + '</div>' : '';
+  $('dungeonInfo').innerHTML = '<div class="dgHero"><div class="dgNum"><small>POSCHODIE</small>' + floor + '</div><div class="dgMeta">' + (boss ? '<b style="color:#ff7a6a">👹 Poschodie bossa!</b><br>' : '') +
+    'Najhlbšie dosiahnuté: <b>' + best + '</b><div class="dgTrack">' + seg + '</div></div></div>' +
+    '<div class="dgCards">' + (modCard || '') + bossCard + prizeCard + '</div>' +
+    '<div class="dgHelp">Prestrieľaj sa hlinou k súperom. Pozor: vlastný výbuch v tesnej chodbe zasiahne aj teba, a tank, ktorý prepadne pod spodný okraj, je zničený.</div>';
+  renderRelics('dungeonRelics');
   $('dungeonEnterBtn').textContent = '▶ Vstúpiť · Poschodie ' + floor;
+}
+function renderLoot(arg) {   // tabuľka odmien na konci hry: buď plochý zoznam dlaždíc, alebo skupiny [{title, color, items}] (viac hráčov); dlaždice postupne naskakujú
+  const box = $('endLoot'); if (!box) return;
+  const groups = (arg || []).length && arg[0].items ? arg : [{ items: arg || [] }];
+  const total = groups.reduce((n, g) => n + g.items.length, 0);
+  const tile = (it, i) => {
+    const ic = it.ammo ? '<span class="lootIc ammo" style="--c:' + it.color + '">' + esc(AMMO[it.ammo].icon) + '</span>'
+      : it.art ? '<span class="lootIc art" style="--c:' + it.color + '"><img src="assets/tanks/tank_hull_' + it.art + '.png" alt="" draggable="false"></span>'
+      : '<span class="lootIc" style="--c:' + it.color + '">' + it.icon + '</span>';
+    return '<div class="lootItem' + (it.badge ? ' badge' : '') + '" style="--c:' + it.color + ';animation-delay:' + (0.15 + i * 0.18) + 's">' + ic + '<b>' + esc(it.label) + '</b><small>' + esc(it.sub) + '</small></div>';
+  };
+  let n = 0;
+  const html = total ? '<div class="lootHead">🎁 Odmeny</div>' + groups.filter(g => g.items.length).map(g =>
+    (g.title ? '<div class="lootWho" style="color:' + (g.color || '#fff') + '">' + esc(g.title) + '</div>' : '') +
+    '<div class="lootRow">' + g.items.map(it => tile(it, n++)).join('') + '</div>').join('') : '';
+  if (box._sig === html) return;   // pasívne zariadenie v multiplayeri volá túto funkciu pri každej aktualizácii stavu - bez zmeny nič neprekresľuj (inak by animácia blikala)
+  box._sig = html; box.style.display = total ? '' : 'none'; box.innerHTML = html;
+}
+// súhrn zápasu pre jedného hráča: zárobok, XP, nová hodnosť, zničené tanky
+function matchLootItems(t, winner) {
+  const it = [], tot = t.tot || { money: 0, xp: 0, levels: [] };
+  if (t === winner) it.push({ icon: '🏆', label: 'Víťaz', sub: '★' + t.wins, color: '#ffd54a', badge: true });
+  if (tot.money > 0) it.push({ icon: '💰', label: '+€' + tot.money, sub: 'Zárobok', color: '#f2c230' });
+  if (tot.xp > 0) it.push({ icon: '⭐', label: '+' + tot.xp + ' XP', sub: 'Skúsenosti', color: '#8cb8ff' });
+  if (tot.levels.length) it.push({ icon: '🎖️', label: 'LV ' + tot.levels[tot.levels.length - 1], sub: tot.levels.length > 1 ? 'Postup o ' + tot.levels.length + ' hodností' : 'Nová hodnosť!', color: '#ffd54a', badge: true });
+  if ((t.kills || 0) > 0) it.push({ icon: '💥', label: t.kills + '×', sub: 'Zničené tanky', color: '#ff7a5a' });
+  return it;
+}
+// nové odznaky a splnené výzvy: snímka profilov pred recordStats() a rozdiel po ňom
+function snapProfiles() {
+  const o = {};
+  tanks.forEach(t => { const p = t.nick ? profiles[nickKey(t.nick)] : null; if (p) o[nickKey(t.nick)] = { ach: new Set(p.achievements || []), d: !!(p.daily && p.daily.claimed), w: !!(p.weekly && p.weekly.claimed) }; });
+  return o;
+}
+function profileExtraItems(snap, t) {
+  const k = t.nick ? nickKey(t.nick) : null, p = k ? profiles[k] : null, b = k && snap[k], it = [];
+  if (!p || !b) return it;
+  ACHIEVEMENTS.filter(a => (p.achievements || []).includes(a.id) && !b.ach.has(a.id)).forEach(a => it.push({ icon: a.icon, label: a.title, sub: 'Nový odznak!', color: '#ffd54a', badge: true }));
+  if (!b.d && p.daily && p.daily.claimed) { const dc = dailyChallengeForToday(); it.push({ icon: '🗓️', label: dc.title, sub: 'Denná výzva +' + dc.xp + ' XP', color: '#6bffb0', badge: true }); }
+  if (!b.w && p.weekly && p.weekly.claimed) { const wc = weeklyChallengeForToday(); it.push({ icon: '📅', label: wc.title, sub: 'Týždenná výzva +' + wc.xp + ' XP', color: '#6bffb0', badge: true }); }
+  return it;
+}
+function matchLootGroups(winner, snap) {   // jedna skupina na každého ľudského hráča (boti sa nezobrazujú)
+  const hs = tanks.filter(t => !t.bot);
+  return hs.map(t => ({ title: hs.length > 1 ? t.name : '', color: t.color, items: matchLootItems(t, winner).concat(snap ? profileExtraItems(snap, t) : []) }));
 }
 function enterShop(resume) {
   genArena(pickBiome());
@@ -1957,12 +2132,21 @@ function beginTurn(i) {
   t.fired = false; t.stun = t.emp > 0; t.emp = 0; ammoMenu.t = 0;
   t.botSt = t.bot ? { wait: 0.9, plan: null, hold: 0 } : null;
   rollWind();                                              // vietor sa mení každý ťah
+  if (hasRelic(t, 'regen') && t.hp < maxHp(t)) { const h0 = t.hp; t.hp = Math.min(maxHp(t), t.hp + 8); floatText(t.x, t.y - 90, '+' + Math.round(t.hp - h0) + ' HP', '#6bffb0'); }
+  const mid = dungeon.active && dungeon.mod && dungeon.mod.id;
+  if (mid === 'storm') wind = (Math.random() < 0.5 ? -1 : 1) * Math.round(rand(55, 85));
+  if (mid === 'shield' && t.team === 1 && t.shieldMax && t.shield < t.shieldMax) { t.shield = Math.min(t.shieldMax, t.shield + Math.ceil(t.shieldMax * 0.12)); floatText(t.x, t.y - 90, '+ŠTÍT', '#8cf'); }
+  if (mid === 'rockfall') {   // salva kameňov; polovicu času mieri na niektorý živý tank
+    const live = tanks.filter(o => !o.dead), tg = Math.random() < 0.5 && live.length ? live[Math.floor(Math.random() * live.length)].x + rand(-120, 120) : rand(100, WORLD_W - 100);
+    strikes.push({ x: clamp(tg, 60, WORLD_W - 60), t: 1.8, n: 3, owner: -1 });
+  }
   for (let k = 0; k < 4; k++) { held[k] = {}; kb[k] = {}; }
   floatText(t.x, t.y - 70, t.stun ? 'OMRÁČENÝ – iba streľba' : 'NA RADE', t.stun ? '#8cff7a' : '#fff');
   tone(700, 900, 0.08, 'triangle', 0.05);
 }
 function nextTurn() {
   const n = tanks.length;
+  const cur = tanks[turnIdx]; if (cur && cur.sinkWarn && !cur.dead) cur.sinkTurns = (cur.sinkTurns || 0) + 1;   // prepadnutý tank práve dohral svoj posledný ťah
   for (let k = 1; k <= n; k++) {
     const j = (turnIdx + k) % n;
     if (!tanks[j].dead) { beginTurn(j); if (net.active) netPublish(); return; }
@@ -1971,13 +2155,13 @@ function nextTurn() {
 // ---------- počítačový súper ----------
 function simShot(t, type, ang, pw) {
   const a = AMMO[type], rad = ang * Math.PI / 180, pv = pivot(t);
-  const m = { x: pv.x + Math.cos(rad) * 36, y: pv.y - Math.sin(rad) * 36 }, sp = a.speed * powerMul(pw);
+  const L = t.boss ? 36 * 1.7 * t.k : 36, m = { x: pv.x + Math.cos(rad) * L, y: pv.y - Math.sin(rad) * L }, sp = a.speed * powerMul(pw);
   const p = { x: m.x, y: m.y, vx: Math.cos(rad) * sp, vy: -Math.sin(rad) * sp, type, life: 0 };
   for (let i = 0; i < 160; i++) {
     stepShot(p, 1 / 30);
     if (p.x < 0 || p.x > WORLD_W || p.y > H) return { x: p.x, y: Math.min(p.y, H) };
     if (p.y >= gy(p.x)) return { x: p.x, y: p.y };
-    if (tanks.some(o => !o.dead && (o !== t || p.life > 0.25) && inTank(o, p.x, p.y))) return { x: p.x, y: p.y };
+    if (tanks.some(o => !o.dead && (o !== t || (p.life > 0.25 && !t.boss)) && inTank(o, p.x, p.y))) return { x: p.x, y: p.y };
     if (obstacles.some(o => p.x >= o.x && p.x <= o.x + o.w && p.y >= obTop(o) && p.y <= o.base)) return { x: p.x, y: p.y };
   }
   return { x: p.x, y: p.y };
@@ -2044,11 +2228,13 @@ function startPlay() {
     let k = 0;   // nasadí sa najsilnejší vlastnený štít (spotrebuje sa 1 ks)
     for (let i = SHIELDS.length - 1; i >= 0; i--) if (t.shields[i] > 0) { k = i + 1; t.shields[i]--; break; }
     t.shT = k; t.shieldMax = k ? SHIELDS[k - 1].cap : 0; t.shield = t.shieldMax;
+    if (dungeon.active && dungeon.mod && dungeon.mod.id === 'shield' && t.team === 1) { t.shT = 3; t.shieldMax = SHIELDS[2].cap; t.shield = t.shieldMax; }
     t.sel = 'ap'; t.cd = 0; t.stun = false; t.fired = false;
   });
   hide('shop'); state = 'play';
   beginTurn((round - 1) % tanks.length);   // začína postupne každý hráč
   banner(biome().icon + ' ' + biome().name + ' · KOLO ' + round + ' – ' + tanks[turnIdx].name + ' začína!', 1600);
+  if (dungeon.active && dungeon.mod) { const m0 = dungeon.mod; setTimeout(() => { if (dungeon.active && dungeon.mod === m0) banner(m0.icon + ' ' + m0.name + ': ' + m0.desc, 3400); }, 1900); }   // poschodie sa mohlo medzitým zmeniť/skončiť
   if (net.active) netPublish();
 }
 function checkRoundEnd() {
@@ -2089,14 +2275,40 @@ function afterRoundEnd() {
   if (w) {
     state = 'matchEnd'; clearSave(); hide('pause');
     $('endNormalBtns').style.display = ''; $('endStoryBtns').style.display = 'none'; $('endDungeonBtns').style.display = 'none';
+    renderLoot([]); if ($('endRelics')) $('endRelics').style.display = 'none';
     if (dungeon.active) {
       const floor = dungeon.progress.floor, boss = floor % 5 === 0, won = w.team === 0;
+      const me = tanks.find(t => t.team === 0), lootItems = [];
+      const profMe = me && me.nick ? profiles[nickKey(me.nick)] : null, achBefore = new Set(profMe && profMe.achievements || []), bestBefore = dungeonBestOf(me && me.nick);
+      if (won && me) {   // odmena za vyčistené poschodie: peniaze + zbrane (pri bossovi viac a lepšie), nech sa oplatí ísť hlbšie
+        const pay = (dungeon.mod ? dungeon.mod.pay : 1) * (hasRelic(me, 'cash') ? 1.25 : 1), cash = Math.round((150 + floor * 25 + (boss ? 500 + floor * 20 : 0)) * pay);
+        me.money += cash; lootItems.push({ icon: '💰', label: '+€' + cash, sub: pay > 1 ? (dungeon.mod ? dungeonModTag() + ' ' : '') + '+' + Math.round((pay - 1) * 100) + ' %' : 'Peniaze', color: '#f2c230' });
+        const drops = boss ? (floor >= 15 ? ['nukeS', 'repairBig'] : floor >= 10 ? ['firestorm', 'repairBig'] : ['he', 'repairBig'])
+          : (hasRelic(me, 'scout') || Math.random() < 0.4 ? [['missile', 'repair', 'bounce'][floor % 3]] : []);
+        drops.forEach(id => {
+          if (!AMMO[id] || me.ammo[id] == null) return;
+          me.ammo[id] = Math.min(capOf(id), me.ammo[id] + 2);
+          lootItems.push({ ammo: id, label: '2× ' + AMMO[id].name, sub: boss ? 'Lup z bossa' : 'Nájdené v chodbe', color: AMMO[id].color });
+        });
+      }
       if (won) {   // postup sa ukladá hneď po výhre (nie až po kliknutí "Ďalšie poschodie"), nech sa nestratí ani keď hráč potom odíde do menu
         dungeon.progress.floor = floor + 1;
         dungeon.progress.best = Math.max(dungeon.progress.best, dungeon.progress.floor);
+        if (boss && !(dungeon.progress.pending && dungeon.progress.pending.length)) { const ch = rollRelicChoices(); dungeon.progress.pending = ch.length ? ch : null; }   // po bossovi výber relikvie
         saveDungeonProgress();
       }
+      if (won && profMe && dungeon.mod) {   // počítadlá pre odznaky za modifikátory ("bez straty životov" = hráčov tank je na plných životoch)
+        const dm = profMe.dungeonMods || (profMe.dungeonMods = { cleared: {}, flawless: {} }), id = dungeon.mod.id;
+        dm.cleared[id] = (dm.cleared[id] || 0) + 1;
+        if (me && !me.dead && me.hp >= maxHp(me)) dm.flawless[id] = (dm.flawless[id] || 0) + 1;
+      }
       recordStats(won ? tanks.find(t => t.team === 0) : undefined);   // postup/odznaky Dungeonu sa počítajú do profilu rovnako ako kampaň
+      if (won) {   // nové odznaky a odomknuté farby tanku z tohto poschodia
+        const achNow = new Set(profMe && profMe.achievements || []);
+        ACHIEVEMENTS.filter(a => achNow.has(a.id) && !achBefore.has(a.id)).forEach(a => lootItems.push({ icon: a.icon, label: a.title, sub: 'Nový odznak!', color: '#ffd54a', badge: true }));
+        BOSS_COLORS.filter(c => bestBefore < c.floor && dungeon.progress.best >= c.floor).forEach(c => lootItems.push({ art: c.id, label: c.name, sub: 'Nová farba tanku!', color: c.hex, badge: true }));
+      }
+      renderLoot(lootItems); renderRelics('endRelics');
       $('endTitle').textContent = won ? ('Poschodie ' + floor + ' vyčistené!' + (boss ? ' 👹' : '')) : ('Padli ste na poschodí ' + floor);
       $('endTitle').style.color = won ? '#5fd35f' : '#e5484d';
       $('endSub').innerHTML = won
@@ -2112,6 +2324,7 @@ function afterRoundEnd() {
     if (story.active) {
       const m = STORY_MISSIONS[story.idx], won = w === tanks[0];
       let worldReward = null;
+      const snapS = snapProfiles(), wasDone = !!story.progress.done[story.idx], unlockedBefore = story.progress.unlocked, storyItems = [];
       if (won) {
         story.progress.unlocked = Math.max(story.progress.unlocked, story.idx + 2); story.progress.done[story.idx] = true;
         const wld = missionWorld(m), wm = worldMissions(wld), flags = ensureStoryFlags(story.progress);
@@ -2121,10 +2334,16 @@ function afterRoundEnd() {
           tanks[0].ammo[rw.ammoId] = Math.min(capOf(rw.ammoId), (tanks[0].ammo[rw.ammoId] || 0) + rw.qty);
           addXp(tanks[0], rw.xp);
           worldReward = wld;
+          storyItems.push({ ammo: rw.ammoId, label: rw.qty + '× ' + AMMO[rw.ammoId].name, sub: 'Dar generála', color: AMMO[rw.ammoId].color, badge: true }, { icon: '🌍', label: 'Planéta dobytá', sub: '+' + rw.xp + ' XP', color: '#6bffb0', badge: true });
         }
         saveStoryProgress(); saveStoryLoadout(tanks[0]);
       }
-      recordStats(w);   // misie v kampani sa teraz tiež počítajú do štatistík profilu (zápasy/výhry/kolá)
+      recordStats(w);
+      if (won && !wasDone) storyItems.push({ icon: '🗺️', label: 'Misia ' + (story.idx + 1), sub: 'Prvé splnenie', color: '#6bffb0' });
+      if (won && story.progress.unlocked > unlockedBefore && STORY_MISSIONS[story.idx + 1]) storyItems.push({ icon: '🔓', label: 'Misia ' + (story.idx + 2), sub: 'Odomknutá', color: '#8cb8ff' });
+      if (won && tanks[0].nick) storyItems.push({ icon: '🎒', label: '€' + tanks[0].money, sub: 'Výbava prenesená', color: '#c9a7ff' });
+      renderLoot([{ title: '', items: matchLootItems(tanks[0], w).concat(storyItems, profileExtraItems(snapS, tanks[0])) }]);
+      // misie v kampani sa teraz tiež počítajú do štatistík profilu (zápasy/výhry/kolá)
       $('endTitle').textContent = won ? 'Misia splnená!' : 'Misia zlyhala';
       $('endTitle').style.color = won ? '#5fd35f' : '#e5484d';
       $('endSub').innerHTML = esc(won ? m.win : m.lose);
@@ -2135,7 +2354,8 @@ function afterRoundEnd() {
       if (worldReward) showGeneralDialog(worldReward, 'outro');
       return;
     }
-    const saved = recordStats(w);
+    const snapN = snapProfiles(), saved = recordStats(w);
+    renderLoot(matchLootGroups(w, snapN));
     $('endTitle').textContent = w.name + ' vyhráva zápas!';
     $('endTitle').style.color = w.color;
     const rank = tanks.slice().sort((x, y) => y.wins - x.wins || y.level - x.level);
@@ -2188,10 +2408,10 @@ function addDirt(cx, cy, r) {
 }
 function teleportTank(id, x) {
   const t = tanks[id]; if (!t || t.dead) return;
-  const nx = clamp(x, 24, WORLD_W - 24);
+  const nx = clamp(x, tankHW(t), WORLD_W - tankHW(t));
   if (blocked(t, nx)) { floatText(t.x, t.y - 50, 'Blokované!', '#ff9a3c'); return; }
   for (let i = 0; i < 24; i++) spark(t.x + rand(-16, 16), t.y - rand(0, 34), rand(-60, 60), rand(-120, 20), '#c9a7ff', rand(0.3, 0.7), 3, 0);
-  t.x = nx; t.y = groundAvg(nx); t.vx = 0;
+  t.x = nx; t.y = groundAvg(nx, tankSpan(t)); t.vx = 0;
   for (let i = 0; i < 24; i++) spark(t.x + rand(-16, 16), t.y - rand(0, 34), rand(-60, 60), rand(-120, 20), '#e6d6ff', rand(0.3, 0.7), 3, 0);
   tone(200, 1500, 0.3, 'sine', 0.08);
 }
@@ -2219,18 +2439,22 @@ function fire(t) {
     tone(500, 1000, 0.3, 'triangle', 0.08); return;
   }
   const sp = a.speed * powerMul(t.power);
-  projectiles.push({ x: m.x, y: m.y, vx: m.dx * sp, vy: m.dy * sp, type, owner: t.id, bounces: a.bounces || 0, life: 0 });
+  const salvo = a.dmg > 0 && a.splash < 70 && !a.strike ? bossBarrels(t) : [0];   // trojitý boss pália z troch hlavní naraz (ťažké zbrane len z jednej)
+  salvo.forEach(off => {
+    const mm = off ? muzzle(t, off) : m;
+    projectiles.push({ x: mm.x, y: mm.y, vx: mm.dx * sp, vy: mm.dy * sp, type, owner: t.id, bounces: a.bounces || 0, life: 0 });
+    for (let i = 0; i < 6; i++) spark(mm.x, mm.y, mm.dx * 120 + rand(-60, 60), mm.dy * 120 + rand(-60, 60), '#ffd27a', 0.25, 3, 300, 'glow');
+    glows.push({ x: mm.x, y: mm.y, r: 26 * (t.k || 1), life: 0.12, max: 0.12, color: '#ffe9a0' });
+  });
   tone(220, 70, 0.18, 'sawtooth', 0.07); noise(0.08, 0.08, 1500); vibrate(10);
-  for (let i = 0; i < 6; i++) spark(m.x, m.y, m.dx * 120 + rand(-60, 60), m.dy * 120 + rand(-60, 60), '#ffd27a', 0.25, 3, 300, 'glow');
-  glows.push({ x: m.x, y: m.y, r: 26, life: 0.12, max: 0.12, color: '#ffe9a0' });
-  shake = Math.max(shake, 2);
+  shake = Math.max(shake, t.boss ? 6 : 2);
 }
 function fireLaser(t, m) {
   tone(1400, 200, 0.35, 'sawtooth', 0.07);
   let x = m.x, y = m.y, hit = false;
   for (let i = 0; i < 1800; i++) {
     x += m.dx * 2; y += m.dy * 2;
-    if (x < 0 || x > WORLD_W || y > H || y < -300) break;
+    if (x < 0 || x > WORLD_W || y > H + ABYSS + 260 || y < -300) break;
     if (y >= gy(x)) { carve(x, y, AMMO.laser.crater * biome().crater); hit = true; break; }
     const e = tanks.find(o => o !== t && !o.dead && inTank(o, x, y));
     if (e) { damage(e, AMMO.laser.dmg * dmgMul(t, 'laser'), t.id, x, y, true); hit = true; break; }
@@ -2239,7 +2463,7 @@ function fireLaser(t, m) {
   if (hit) for (let i = 0; i < 14; i++) spark(x, y, rand(-160, 160), rand(-200, 40), AMMO.laser.color, 0.5, 3, 300, 'glow');
   shake = Math.max(shake, 3);
 }
-function inTank(t, x, y) { return x >= t.x - 24 && x <= t.x + 24 && y >= t.y - 34 && y <= t.y + 2; }
+function inTank(t, x, y) { const hw = tankHW(t), hh = t.boss ? t.boss.hh : 34; return x >= t.x - hw && x <= t.x + hw && y >= t.y - hh && y <= t.y + 2; }
 
 function spark(x, y, vx, vy, color, life, size, grav = 300, fx) {
   if (particles.length >= MAXP) return;
@@ -2263,26 +2487,30 @@ function damage(t, d, ownerId, x, y, direct) {
   }
   floatText(x, y - 20, '-' + Math.round(d), absorbed && !dealt ? (SHIELDS[t.shT - 1] || {}).color || '#8cf' : '#fff');
   if (t.hp <= 0) killTank(t, ownerId);
+  else if (t.boss) { const f = t.hp / maxHp(t), ph = f <= 0.33 ? 2 : f <= 0.66 ? 1 : 0; if (ph > bossPhase(t)) onBossPhase(t, ph); }
 }
 function killTank(t, ownerId) {
   t.hp = 0; t.dead = true;
   const owner = tanks[ownerId];
   if (owner && ownerId !== t.id) { reward(owner, KILL_BONUS, 'kill'); addXp(owner, 50); owner.kills = (owner.kills || 0) + 1; }
-  for (let i = 0; i < 60; i++) {
+  const bk = t.boss ? 4 : 1;   // boss exploduje celou šírkou trupu a mnohokrát silnejšie
+  for (let i = 0; i < 60 * bk; i++) {
     const a = rand(0, 6.28), v = rand(60, 380);
-    spark(t.x, t.y - 14, Math.cos(a) * v, Math.sin(a) * v - 100, ['#ff7043', '#ffd54a', '#444', '#ff3d00'][i % 4], rand(.5, 1.4), rand(3, 8), 300, i % 4 === 2 ? '' : 'glow');
+    spark(t.x + (t.boss ? rand(-t.boss.hw, t.boss.hw) : 0), Math.min(t.y, H - 8) - 14 * (t.k || 1), Math.cos(a) * v, Math.sin(a) * v - 100, ['#ff7043', '#ffd54a', '#444', '#ff3d00'][i % 4], rand(.5, 1.4), rand(3, 8), 300, i % 4 === 2 ? '' : 'glow');
   }
   noise(0.7, 0.3, 500); tone(120, 30, 0.6, 'sawtooth', 0.1); vibrate(80);
-  shake = 14;
+  shake = t.boss ? 28 : 14;
   checkRoundEnd();
 }
 function explosion(x, y, type, ownerId) {
   const a = AMMO[type];
   lastImpact = { x, y, t: 1.1, mag: a.splash || 0 };
-  const owner = tanks[ownerId], dmg = a.dmg * dmgMul(owner, type);
+  const owner = tanks[ownerId], dmg = a.dmg * dmgMul(owner, type) * (owner && owner.boss ? owner.boss.dmgMul : 1);
   if (a.dirt) { addDirt(x, y, a.dirt); for (let i = 0; i < 24; i++) spark(x, y, rand(-140, 140), rand(-220, -30), '#b58a5a', rand(0.4, 0.9), rand(3, 7)); noise(0.3, 0.2, 500); return; }
   if (a.tele) { teleportTank(ownerId, x); return; }
   if (a.strike) { strikes.push({ x, t: 1.3, n: a.strike, owner: ownerId }); tone(900, 300, 0.3, 'square', 0.05); return; }
+  const digR = a.crater * biome().crater;
+  tanks.forEach(o => { if (!o.dead && o.id !== ownerId && Math.abs(o.x - x) < digR + tankHW(o)) o.lastDugBy = ownerId; });   // komu pripísať zničenie, ak tank spadne do priepasti
   carve(x, y, a.crater * biome().crater);
   scorch(x, y, Math.max(20, a.crater * biome().crater * 1.6));
   if (a.crater >= 35 && owner) reward(owner, Math.round(a.crater / 8), 'terrain');   // veľký kráter = malý bonus za pretvarovanie terénu
@@ -2291,11 +2519,14 @@ function explosion(x, y, type, ownerId) {
   trees.filter(tr => Math.hypot(tr.x - x, tr.y0 - tr.h / 2 - y) < a.splash + 25).forEach(tr => killTree(tr, ownerId));
   tanks.forEach(t => {
     if (t.dead) return;
-    const d = Math.hypot(x - t.x, y - (t.y - 14));
+    const ex = t.boss ? t.boss.hw - 24 : 0, ey = t.boss ? t.boss.hh - 34 : 0;   // boss je široký/vysoký - vzdialenosť sa meria od okraja zásahovej zóny, nie od stredu
+    const d = Math.hypot(Math.max(Math.abs(x - t.x) - ex, 0), Math.max(Math.abs(y - (t.y - 14)) - ey, 0));
     if (d < a.splash + 18) {
       const f = 1 - clamp((d - 18) / a.splash, 0, 1) * 0.65;
       if (a.stun) { t.emp = 1; floatText(t.x, t.y - 50, 'EMP!', '#8cff7a'); }
-      damage(t, dmg * f, ownerId, t.x, t.y - 20, f >= 0.9);
+      const wp = bossWeakPoint(t), crit = wp && Math.hypot(x - wp.x, y - wp.y) < 30;   // zásah do oka obra
+      if (crit) { floatText(wp.x, wp.y - 30, '🎯 KRITICKÝ ZÁSAH!', '#ffd54a'); tone(900, 1500, 0.15, 'square', 0.06); }
+      damage(t, dmg * f * (crit ? 2 : 1), ownerId, t.x, t.y - 20, f >= 0.9);
     }
   });
   obstacles.forEach(o => {   // oceľové prekážky sú teraz tiež zničiteľné (len oveľa odolnejšie) – nič nie je naveky nepriestrelné
@@ -2357,10 +2588,17 @@ function inputOf(p) {
   return { left: a.left || k.left, right: a.right || k.right, up: a.up || k.up, down: a.down || k.down, fire: a.fire || k.fire, pup: a.pup || k.pup, pdown: a.pdown || k.pdown };
 }
 function blocked(t, nx) {
-  if (tanks.some(o => o !== t && !o.dead && Math.abs(nx - o.x) < 50)) return true;
+  if (tanks.some(o => o !== t && !o.dead && Math.abs(nx - o.x) < tankHW(t) + tankHW(o) + 2)) return true;
+  if (t.boss) return false;   // boss budovy nerešpektuje - rozdrví ich (pozri updateTank)
   return obstacles.some(o => nx + 22 > o.x && nx - 22 < o.x + o.w && obTop(o) < t.y - 4);
 }
 const dustCol = () => ({ desert: 'rgba(225,195,140,.55)', winter: 'rgba(240,246,252,.6)', mountains: 'rgba(160,160,170,.5)' }[biomeKey] || 'rgba(150,125,90,.5)');
+function swallowed(t) {   // tank sa "prepadol do zabudnutia", keď je pod spodným okrajom arény (H) aspoň 2/3 dĺžky HLAVNE - nie trupu; závisí teda od elevácie:
+  // pri zdvihnutej hlavni musí tank zájsť hlbšie, vodorovná hlaveň zmizne naraz celá
+  const p = pivot(t), m = muzzle(t), lo = Math.min(p.y, m.y), hi = Math.max(p.y, m.y);
+  const below = hi <= H ? 0 : lo >= H ? 1 : (hi - H) / (hi - lo);   // podiel dĺžky hlavne pod okrajom
+  return below >= 2 / 3;
+}
 function updateTank(t, dt) {
   if (t.dead) return;
   const B = biome();
@@ -2378,7 +2616,7 @@ function updateTank(t, dt) {
       if (t.noFuelT <= 0) { t.noFuelT = 1.2; floatText(t.x, t.y - 50, 'BEZ PALIVA!', '#ff9a3c'); }
     }
   }
-  const slope = (gy(t.x + 18) - gy(t.x - 18)) / 36;   // >0 = klesá doprava
+  const span = tankSpan(t), slope = (gy(t.x + span) - gy(t.x - span)) / (2 * span);   // >0 = klesá doprava
   const sp = TANK_SPEED * (1 + 0.2 * t.speedLvl) * B.move, limit = 1.05 + 0.08 * t.speedLvl;
   let vx = 0;
   if (B.ice) {   // ľad: zotrvačnosť a sklz zo svahov
@@ -2394,7 +2632,7 @@ function updateTank(t, dt) {
     if (dir && up < limit) vx = dir * sp * clamp(1 - 0.5 * Math.max(0, up), 0.3, 1.3);
   }
   if (vx) {
-    const nx = clamp(t.x + vx * dt, 24, WORLD_W - 24);
+    const nx = clamp(t.x + vx * dt, tankHW(t), WORLD_W - tankHW(t));
     if (!blocked(t, nx)) {
       if (dir) t.fuel = Math.max(0, t.fuel - Math.abs(nx - t.x) * FUEL_PER_PX * B.fuel * (1 + 0.5 * Math.max(0, -slope * dir)));
       t.trackPhase = (t.trackPhase || 0) + (nx - t.x);
@@ -2409,9 +2647,21 @@ function updateTank(t, dt) {
   t.recoil = Math.max(0, (t.recoil || 0) - dt * 4);
   if (quality > 0 && t.hp < maxHp(t) * 0.35 && Math.random() < dt * 6) spark(t.x + rand(-8, 8), t.y - 28, rand(-10, 10), rand(-50, -25), t.hp < maxHp(t) * 0.18 ? 'rgba(30,30,30,.7)' : 'rgba(90,90,90,.6)', 1.2, rand(5, 9), -15);
   // pripnutie k terénu
-  const g = groundAvg(t.x);
+  if (t.boss) obstacles.slice().forEach(o => { if (t.x + tankHW(t) > o.x && t.x - tankHW(t) < o.x + o.w && obTop(o) < t.y - 4) destroyObstacle(o, t.id); });
+  const g = groundAvg(t.x, span);
   if (t.y < g) t.y = Math.min(g, t.y + 420 * dt); else t.y = Math.max(g, t.y - 320 * dt);
-  const tt = tiltAt(t.x); t.tilt += (tt - t.tilt) * Math.min(1, dt * 10);
+  if (state === 'play' && swallowed(t)) {   // ochrana: prepadnutý tank dostane ešte jeden vlastný ťah (strieľať z priepasti sa dá), až po ňom padne do hlbín
+    if (!t.sinkWarn) { t.sinkWarn = true; t.sinkTurns = 0; banner('⚠ ' + t.name + ' sa prepadá do hlbín! Posledný ťah na pomstu alebo záchranu', 2800); noise(0.4, 0.3, 250); }
+    else if (t.sinkTurns >= 1) {
+      floatText(t.x, H - 60, '⚠ Prepadol sa do hlbín!', '#ff9a3c'); noise(0.6, 0.4, 250);
+      const dg = t.lastDugBy != null && t.lastDugBy !== t.id ? t.lastDugBy : -1;
+      killTank(t, dg);
+      const dk = tanks[dg], dp = dk && dk.nick ? profiles[nickKey(dk.nick)] : null;   // odznak "Hrobár" - počíta sa zhodenie súpera do priepasti
+      if (dp) { dp.abyss = (dp.abyss || 0) + 1; saveProfiles(); checkAchievements(dk.nick); }
+      return;
+    }
+  } else if (t.sinkWarn && state === 'play') { t.sinkWarn = false; floatText(t.x, t.y - 60, 'Zachránený!', '#6bffb0'); }
+  const tt = tiltAt(t.x, span); t.tilt += (tt - t.tilt) * Math.min(1, dt * 10);
   if ((t.emp > 0 || t.stun) && Math.random() < 0.5) spark(t.x + rand(-20, 20), t.y - rand(4, 34), rand(-30, 30), rand(-60, -10), '#bfff9a', .25, 2, 0);
 }
 function updateProjectiles(dt) {
@@ -2427,14 +2677,14 @@ function updateProjectiles(dt) {
         for (let i = 0; i < pa.apexSplit; i++) spawnProj(p.x, p.y, p.vx * 0.9 + (i - (pa.apexSplit - 1) / 2) * 75, p.vy + 20, 'shard', p.owner, 0.12);
         break;
       }
-      if (p.y > H + 60 || p.life > 8) { p.gone = true; break; }
+      if (p.y > H + ABYSS + 260 || p.life > 8) { p.gone = true; break; }
       if (p.x < 0 || p.x > WORLD_W) {
         if (p.bounces > 0) { p.vx = -p.vx * 0.8; p.x = clamp(p.x, 1, WORLD_W - 1); p.bounces--; bounceFx(p); continue; }
         p.gone = true; break;
       }
       // tanky
       for (const t of tanks) {
-        if (!t.dead && p.life >= (p.arm || 0) && (t.id !== p.owner || p.life > 0.25) && inTank(t, p.x, p.y)) { explosion(p.x, p.y, p.type, p.owner); p.gone = true; break; }
+        if (!t.dead && p.life >= (p.arm || 0) && (t.id !== p.owner || (p.life > 0.25 && !t.boss)) && inTank(t, p.x, p.y)) { explosion(p.x, p.y, p.type, p.owner); p.gone = true; break; }
       }
       if (p.gone) break;
       // prekážky
@@ -2526,7 +2776,7 @@ function update(dt) {
       if (netLiveTimer <= 0) { netLiveTimer = 0.15; netPublish(); }
     }
   } else if (state === 'shop') {
-    tanks.forEach(t => { t.tilt = tiltAt(t.x); t.y = groundAvg(t.x); });
+    tanks.forEach(t => { t.tilt = tiltAt(t.x, tankSpan(t)); t.y = groundAvg(t.x, tankSpan(t)); });
   }
   let pw = 0;   // aktualizácia častíc na mieste (bez alokácií)
   for (let i = 0; i < particles.length; i++) {
@@ -2552,15 +2802,48 @@ function draw() {
   drawWeather();
   drawProjectiles(); drawBeams(); drawParticles(); drawSpecials();
   ctx.restore();
+  drawSinkWarn();
+  drawDarkness();
   ctx.drawImage(vigL.c, 0, 0, W, H);
   drawHud();
   if (showFps) { ctx.fillStyle = '#7CFC7C'; ctx.font = '11px monospace'; ctx.textAlign = 'left'; ctx.fillText(Math.round(1000 / fpsEma) + ' fps · kvalita ' + quality + ' · ×' + SCALE.toFixed(1) + ' · ' + particles.length + ' častíc', 8, H - 8); }
+}
+function drawSinkWarn() {   // prepadnutý tank je mimo obrazovky - ukáž výstrahu pri spodnom okraji
+  const z = cam.zoom;
+  tanks.forEach(t => {
+    if (!t.sinkWarn || t.dead) return;
+    const sx = clamp((t.x - cam.x) * z + W / 2, 90, W - 90), y = H - 34, on = Math.floor(time * 3) % 2;
+    ctx.save(); ctx.textAlign = 'center'; ctx.font = 'bold 13px system-ui';
+    ctx.fillStyle = on ? '#ff5a3a' : '#ffb04a'; ctx.beginPath(); ctx.moveTo(sx, H - 6); ctx.lineTo(sx - 12, y + 6); ctx.lineTo(sx + 12, y + 6); ctx.closePath(); ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.85)'; const txt = '⚠ ' + t.name + ' sa prepadá' + (t.id === turnIdx ? ' · POSLEDNÝ ŤAH' : '');
+    ctx.strokeText(txt, sx, y); ctx.fillStyle = '#fff'; ctx.fillText(txt, sx, y); ctx.restore();
+  });
+}
+let darkCv = null;
+function drawDarkness() {   // modifikátor "Tma": čierna vrstva s dierami okolo tankov, striel a výbuchov
+  if (!(dungeon.active && dungeon.mod && dungeon.mod.id === 'dark') || (state !== 'play' && state !== 'roundEnd')) return;
+  const cw = ctx.canvas.width, ch = ctx.canvas.height;
+  if (!darkCv || darkCv.width !== cw || darkCv.height !== ch) { darkCv = document.createElement('canvas'); darkCv.width = cw; darkCv.height = ch; }
+  const d = darkCv.getContext('2d'), z = cam.zoom;
+  d.globalCompositeOperation = 'source-over'; d.setTransform(1, 0, 0, 1, 0, 0); d.clearRect(0, 0, cw, ch);
+  d.fillStyle = 'rgba(0,0,8,.93)'; d.fillRect(0, 0, cw, ch);
+  d.setTransform(SCALE, 0, 0, SCALE, 0, 0); d.globalCompositeOperation = 'destination-out';
+  const hole = (x, y, r, a) => {
+    const sx = (x - cam.x) * z + W / 2, sy = (y - cam.y) * z + H / 2, R = r * z, g = d.createRadialGradient(sx, sy, R * 0.25, sx, sy, R);
+    g.addColorStop(0, 'rgba(0,0,0,' + a + ')'); g.addColorStop(1, 'rgba(0,0,0,0)'); d.fillStyle = g; d.beginPath(); d.arc(sx, sy, R, 0, 6.3); d.fill();
+  };
+  tanks.forEach(t => { if (!t.dead) hole(t.x, t.y - 20, t.team === 0 ? 230 : 100 * (t.k || 1), t.team === 0 ? 1 : 0.55); });
+  projectiles.forEach(p => hole(p.x, p.y, 75, 1));
+  glows.forEach(g => hole(g.x, g.y, g.r * 2.2, clamp(g.life / g.max, 0, 1)));
+  beams.forEach(b => { hole(b.x1, b.y1, 70, 1); hole(b.x2, b.y2, 90, 1); });
+  strikes.forEach(st => hole(st.x, gy(st.x) - 40, 80, 0.8));
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(darkCv, 0, 0); ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
 }
 function drawTurnMarker() {
   if (state !== 'play') return;
   const t = tanks[turnIdx]; if (!t || t.dead) return;
   drawAimAids(t);
-  const y = t.y - 96 + Math.sin(time * 5) * 4;
+  const y = t.y - (t.boss ? t.boss.hh + 78 : 96) + Math.sin(time * 5) * 4;
   ctx.fillStyle = t.color; ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(t.x, y + 14); ctx.lineTo(t.x - 10, y); ctx.lineTo(t.x + 10, y); ctx.closePath(); ctx.fill(); ctx.stroke();
   ctx.textAlign = 'center'; ctx.font = 'bold 12px system-ui'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.8)';
@@ -2788,6 +3071,7 @@ function roundRect(x, y, w, h, r, c) {
 const TANK_COLOR_NAME = {
   '#3e8bff': 'blue', '#e5484d': 'red', '#3fbf5f': 'green', '#f2c230': 'gold', '#b06cff': 'purple',
   '#ff8a3d': 'orange', '#2fd0c8': 'teal', '#ff5fb0': 'pink', '#9aa5b1': 'gray', '#8bd450': 'lime',
+  '#3a3f4c': 'obsidian', '#ff3d00': 'magma', '#e8ecf4': 'platinum',
 };
 // Realistickejší sprite set (2025-10) je prekreslený z jednej spoločnej flat-side-view predlohy a len prefarbený
 // pre každú farbu (HSV hue/sat swap pri zachovaní tieňovania) – preto majú všetky farby rovnaké rozmery/pivot.
@@ -2795,6 +3079,7 @@ const TANK_ART_SHARED = { hullW: 400, hullH: 101, pivotX: 175, turretSide: 437 }
 const TANK_ART_META = {
   blue: TANK_ART_SHARED, red: TANK_ART_SHARED, green: TANK_ART_SHARED, gold: TANK_ART_SHARED, purple: TANK_ART_SHARED,
   orange: TANK_ART_SHARED, teal: TANK_ART_SHARED, pink: TANK_ART_SHARED, gray: TANK_ART_SHARED, lime: TANK_ART_SHARED,
+  obsidian: TANK_ART_SHARED, magma: TANK_ART_SHARED, platinum: TANK_ART_SHARED,
 };
 const TANK_TARGET_W = 130;   // cieľová šírka trupu na obrazovke (px); zväčšené z 76, nech je detailnejší realistický sprite čitateľný
 function tankArtScale(colorName) { const m = TANK_ART_META[colorName]; return m ? TANK_TARGET_W / m.hullW : 0; }
@@ -2854,53 +3139,104 @@ function tankSprite(color, dead) {   // trup tanku sa vykreslí raz pre každú 
   if (dead) { x.strokeStyle = 'rgba(0,0,0,.7)'; x.lineWidth = 1.4; x.beginPath(); x.moveTo(-10, -25); x.lineTo(-3, -17); x.lineTo(-8, -12); x.moveTo(8, -25); x.lineTo(13, -16); x.stroke(); }
   return (sprites[key] = L);
 }
+function drawBossArmor(t) {   // pancierové "mosty" medzi trupmi trojitého bossa / bodce a výstražné svetlo obra (kreslí sa v lokálnych súradniciach trupu)
+  const B = t.boss, h = t.artPivotH || 40, dead = t.dead;
+  const plate = dead ? '#2a2a2a' : '#2e3440', edge = dead ? '#1a1a1a' : '#12151c';
+  if (B.gap) {
+    for (const side of [-1, 1]) {
+      ctx.fillStyle = plate; ctx.fillRect(side > 0 ? 36 : -B.gap + 36, -h * 0.9, B.gap - 72, h * 0.5);
+      ctx.strokeStyle = edge; ctx.lineWidth = 2; ctx.strokeRect(side > 0 ? 36 : -B.gap + 36, -h * 0.9, B.gap - 72, h * 0.5);
+      ctx.fillStyle = dead ? '#444' : t.color; ctx.fillRect(side > 0 ? 36 : -B.gap + 36, -h * 0.72, B.gap - 72, 4);
+      ctx.fillStyle = '#7b8496';
+      for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc((side > 0 ? 36 : -B.gap + 36) + 8 + i * (B.gap - 88) / 2, -h * 0.58, 2, 0, 6.3); ctx.fill(); }
+    }
+    ctx.fillStyle = edge; ctx.fillRect(-B.gap, -h * 0.34, B.gap * 2, 7);   // spodná spojovacia lišta
+    ctx.fillStyle = plate; ctx.fillRect(-B.gap, -h * 0.34, B.gap * 2, 3);
+  } else if (!dead) {
+    ctx.fillStyle = '#20242e'; ctx.strokeStyle = edge; ctx.lineWidth = 1.5;
+    for (let i = -3; i <= 3; i++) {   // bodce na chrbte obra
+      const bx = i * 21 * B.s * 0.5, bh = (14 + (3 - Math.abs(i)) * 3) * B.s * 0.5;
+      ctx.beginPath(); ctx.moveTo(bx - 6, -h * 0.82); ctx.lineTo(bx, -h * 0.82 - bh); ctx.lineTo(bx + 6, -h * 0.82); ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+    const pulse = 0.55 + 0.45 * Math.sin(time * 5);   // pulzujúce červené "oko"
+    ctx.fillStyle = 'rgba(255,40,40,' + pulse + ')'; ctx.beginPath(); ctx.arc(-h * 0.5, -h * 0.5, 7, 0, 6.3); ctx.fill();
+    ctx.fillStyle = 'rgba(255,90,60,' + (pulse * 0.25) + ')'; ctx.beginPath(); ctx.arc(-h * 0.5, -h * 0.5, 18, 0, 6.3); ctx.fill();
+  }
+}
+function drawBossBar(t) {
+  const B = t.boss, mh = maxHp(t), w = Math.max(160, B.hw * 1.5), x = t.x - w / 2, y = t.y - B.hh - 26 * (t.k > 1 ? 1.5 : 1);
+  ctx.save(); ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(0,0,0,.65)'; roundRect(x - 3, y - 3, w + 6, 16, 7); ctx.fill();
+  ctx.fillStyle = t.hp / mh > .5 ? '#d33b3b' : t.hp / mh > .25 ? '#f0a030' : '#ffd54a';
+  const hw = w * clamp(t.hp / mh, 0, 1); if (hw > 1) { roundRect(x, y, hw, 10, 5); ctx.fill(); }
+  ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 1; roundRect(x, y, w, 10, 5); ctx.stroke();
+  ctx.font = 'bold 12px system-ui'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.85)';
+  ctx.strokeText(t.name + ' · ' + Math.ceil(t.hp) + ' / ' + mh, t.x, y - 7); ctx.fillStyle = '#fff'; ctx.fillText(t.name + ' · ' + Math.ceil(t.hp) + ' / ' + mh, t.x, y - 7);
+  ctx.restore();
+}
 function drawTank(t) {
-  const dead = t.dead;
+  const dead = t.dead, B = t.boss, k = t.k || 1, offs = bossBarrels(t);   // offs = živé hlavne; vraky segmentov trojice sa kreslia z bossBarrelsAll
   const art = tankArt[TANK_COLOR_NAME[String(t.color).toLowerCase()]];
   const useArt = art && art.loaded;
   ctx.save(); ctx.translate(t.x, t.y + 1); ctx.rotate(t.tilt);
-  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(0, 2, 31, 4.5, 0, 0, 6.3); ctx.fill();   // tieň
-  if (useArt) {
-    if (dead) ctx.filter = 'grayscale(1) brightness(.55)';
-    const s = art.scale;
-    ctx.drawImage(art.hull, -art.pivotX * s, -art.hullH * s, art.hullW * s, art.hullH * s);
-    if (dead) ctx.filter = 'none';
-  } else {
-    ctx.drawImage(tankSprite(t.color, dead).c, -36, -52, 72, 58);
-    ctx.fillStyle = 'rgba(0,0,0,.5)';   // pohyb pásov
-    const ph = (((t.trackPhase || 0) % 6) + 6) % 6;
-    for (let i = -26; i < 26; i += 6) ctx.fillRect(i + ph, -1, 2, 3);
-    if (!dead && t.armorLvl > 0) {   // farebný pás brnenia podľa úrovne
-      ctx.fillStyle = tierCss(t.armorLvl); ctx.fillRect(-19, -13.5, 38, 3);
-      for (let i = 0; i < t.armorLvl; i++) ctx.fillRect(-18 + i * 3.6, -27, 2, 3);
+  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(0, 2, B ? B.hw * 0.95 : 31, 4.5 * Math.min(k, 2), 0, 0, 6.3); ctx.fill();   // tieň
+  if (B && B.gap) drawBossArmor(t);   // mosty idú POD trupy, aby sa trupy prekrývali s ich okrajmi
+  bossBarrelsAll(t).forEach(off => {
+    const wreck = dead || bossWreck(t, off);
+    ctx.save(); ctx.translate(off, 0); ctx.scale(k, k);
+    if (useArt) {
+      if (wreck) ctx.filter = 'grayscale(1) brightness(.55)';
+      const s = art.scale;
+      ctx.drawImage(art.hull, -art.pivotX * s, -art.hullH * s, art.hullW * s, art.hullH * s);
+      if (wreck) ctx.filter = 'none';
+    } else {
+      ctx.drawImage(tankSprite(t.color, wreck).c, -36, -52, 72, 58);
+      ctx.fillStyle = 'rgba(0,0,0,.5)';   // pohyb pásov
+      const ph = (((t.trackPhase || 0) % 6) + 6) % 6;
+      for (let i = -26; i < 26; i += 6) ctx.fillRect(i + ph, -1, 2, 3);
+      if (!dead && t.armorLvl > 0) {   // farebný pás brnenia podľa úrovne
+        ctx.fillStyle = tierCss(t.armorLvl); ctx.fillRect(-19, -13.5, 38, 3);
+        for (let i = 0; i < t.armorLvl; i++) ctx.fillRect(-18 + i * 3.6, -27, 2, 3);
+      }
     }
-  }
+    ctx.restore();
+  });
+  if (B && !B.gap) drawBossArmor(t);   // bodce obra idú NAD trup
   ctx.restore();
   if (dead) return;
-  const p = pivot(t), a = t.ang * Math.PI / 180, ux = Math.cos(a), uy = -Math.sin(a), rc = (t.recoil || 0) * 7, x0 = p.x - ux * rc, y0 = p.y - uy * rc, L = 36;
-  if (useArt) {
-    const ts = art.turretSide * art.scale;
-    ctx.save(); ctx.translate(x0, y0); ctx.rotate(-a);
-    ctx.drawImage(art.turret, -ts / 2, -ts / 2, ts, ts);
-    ctx.restore();
-  } else {
-  ctx.lineCap = 'round';
-  ctx.strokeStyle = '#161a22'; ctx.lineWidth = 8.5; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 + ux * L, y0 + uy * L); ctx.stroke();
-  ctx.strokeStyle = '#59627a'; ctx.lineWidth = 5.5; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 + ux * L, y0 + uy * L); ctx.stroke();
-  ctx.strokeStyle = t.color; ctx.lineWidth = 2.6; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 + ux * L, y0 + uy * L); ctx.stroke();
-  ctx.lineCap = 'butt'; ctx.strokeStyle = '#11141b'; ctx.lineWidth = 11;
-  ctx.beginPath(); ctx.moveTo(x0 + ux * (L - 7), y0 + uy * (L - 7)); ctx.lineTo(x0 + ux * (L - 1), y0 + uy * (L - 1)); ctx.stroke();
-  ctx.fillStyle = '#20242e'; ctx.beginPath(); ctx.arc(p.x, p.y, 4.5, 0, 6.3); ctx.fill();
-  }
+  const a = t.ang * Math.PI / 180, ux = Math.cos(a), uy = -Math.sin(a), rc = (t.recoil || 0) * 7 * k, L = 36 * k;
+  offs.forEach(off => {
+    const p = pivot(t, off), x0 = p.x - ux * rc, y0 = p.y - uy * rc;
+    if (useArt) {
+      const ts = art.turretSide * art.scale * k;
+      ctx.save(); ctx.translate(x0, y0); ctx.rotate(-a);
+      ctx.drawImage(art.turret, -ts / 2, -ts / 2, ts, ts);
+      ctx.restore();
+    } else {
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#161a22'; ctx.lineWidth = 8.5 * k; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 + ux * L, y0 + uy * L); ctx.stroke();
+      ctx.strokeStyle = '#59627a'; ctx.lineWidth = 5.5 * k; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 + ux * L, y0 + uy * L); ctx.stroke();
+      ctx.strokeStyle = t.color; ctx.lineWidth = 2.6 * k; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 + ux * L, y0 + uy * L); ctx.stroke();
+      ctx.lineCap = 'butt'; ctx.strokeStyle = '#11141b'; ctx.lineWidth = 11 * k;
+      ctx.beginPath(); ctx.moveTo(x0 + ux * (L - 7 * k), y0 + uy * (L - 7 * k)); ctx.lineTo(x0 + ux * (L - k), y0 + uy * (L - k)); ctx.stroke();
+      ctx.fillStyle = '#20242e'; ctx.beginPath(); ctx.arc(p.x, p.y, 4.5 * k, 0, 6.3); ctx.fill();
+    }
+  });
   if (t.shield > 0) {
     const T = t.shT || 1, col = tierCss(T), frac = clamp(t.shield / (t.shieldMax || 1), 0.25, 1), ss = TANK_TARGET_W / 76;
-    const pulse = frac * (0.55 + 0.25 * Math.sin(time * 6));
+    const sk = B ? (B.gap ? 3.1 : k) : 1, pulse = frac * (0.55 + 0.25 * Math.sin(time * 6));
     ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineWidth = 2 + T * 0.35;
-    ctx.beginPath(); ctx.arc(t.x, t.y - 16 * ss, (36 + (T >= 10 ? 4 : 0)) * ss, 0, 6.3);
+    ctx.beginPath(); ctx.arc(t.x, t.y - 16 * ss * (B && !B.gap ? k : 1), (36 + (T >= 10 ? 4 : 0)) * ss * sk, 0, 6.3);
     ctx.globalAlpha = pulse * 0.2; ctx.fill();
     ctx.globalAlpha = pulse; ctx.stroke();
-    if (T >= 7) { ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(t.x, t.y - 16 * ss, (42 + (T >= 10 ? 4 : 0)) * ss, 0, 6.3); ctx.stroke(); }
+    if (T >= 7) { ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(t.x, t.y - 16 * ss * (B && !B.gap ? k : 1), (42 + (T >= 10 ? 4 : 0)) * ss * sk, 0, 6.3); ctx.stroke(); }
     ctx.globalAlpha = 1;
+  }
+  if (B) {
+    drawBossBar(t);
+    const wp = bossWeakPoint(t);
+    if (wp) { ctx.strokeStyle = 'rgba(255,213,74,' + (0.45 + 0.35 * Math.sin(time * 6)) + ')'; ctx.lineWidth = 2; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.arc(wp.x, wp.y, 28, 0, 6.3); ctx.stroke(); ctx.setLineDash([]); }
+    if (B.gap && quality > 0) bossBarrelsAll(t).forEach(off => { if (bossWreck(t, off) && Math.random() < 0.25) spark(t.x + off + rand(-30, 30), t.y - 40, rand(-10, 10), rand(-60, -30), 'rgba(40,40,40,.7)', 1.2, rand(6, 11), -15); });
   }
 }
 function drawProjectiles() {
@@ -3073,7 +3409,7 @@ function drawHud() {
   const off = n === 2 ? 0 : 78;
   if (n === 2) ctx.fillText(tanks[0].wins + '  :  ' + tanks[1].wins, W / 2, 42 + SAFE_TOP);
   ctx.font = '13px system-ui'; ctx.fillStyle = 'rgba(255,255,255,.7)';
-  ctx.fillText('KOLO ' + round + ' · do ' + WIN_ROUNDS + ' víťazstiev · ' + biome().icon + ' ' + biome().name, W / 2, 62 + off + SAFE_TOP);
+  ctx.fillText('KOLO ' + round + ' · do ' + WIN_ROUNDS + ' víťazstiev · ' + biome().icon + ' ' + biome().name + (dungeonModTag() ? ' · ' + dungeonModTag() : ''), W / 2, 62 + off + SAFE_TOP);
   const wx = W / 2, wy = 84 + off + SAFE_TOP, wl = clamp(wind, -120, 120) * 0.66, B = biome();
   ctx.fillText('VIETOR ' + Math.abs(wind) + (B.gust >= 0.9 ? ' · víchrica (mení smer)' : B.gust >= 0.5 ? ' · nárazový' : '') + (B.altWind ? ' · vo výške silnejší' : ''), wx, wy + 14);
   ctx.strokeStyle = '#9fd0ff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(wx, wy - 4); ctx.lineTo(wx + wl * 0.8, wy - 4); ctx.stroke();
@@ -3562,6 +3898,7 @@ function renderSetup() {
       '<input class="pname" data-i="' + i + '" maxlength="14" list="nickList" autocomplete="off" placeholder="Prezývka" value="' + esc(p.name) + '"' + (prof || p.bot ? ' readonly' : '') + ' aria-label="Prezývka hráča ' + (i + 1) + '">' +
       '<button class="lgn' + (prof ? ' out' : '') + '" data-i="' + i + '" data-act="' + (prof ? 'out' : 'in') + '"' + (p.bot ? ' disabled' : '') + '>' + (prof ? 'Odhlásiť' : 'Prihlásiť') + '</button>' +
       '<div class="sw"><select class="bsel" data-i="' + i + '" title="Typ hráča">' + ['Človek', 'PC ľahký', 'PC stredný', 'PC ťažký'].map((n, k) => '<option value="' + k + '"' + (p.bot === k ? ' selected' : '') + '>' + n + '</option>').join('') + '</select>' + PALETTE.map(c => '<button class="swb' + (c.toLowerCase() === p.color.toLowerCase() ? ' sel' : '') + '" data-i="' + i + '" data-c="' + c + '" style="background:' + c + '"' + (taken.has(c.toLowerCase()) ? ' disabled' : '') + ' title="Farba tanku"></button>').join('') +
+      BOSS_COLORS.map(bc => { const ok = bossColorUnlocked(bc, p.nick); return '<button class="swb boss' + (ok ? '' : ' locked') + (bc.hex === p.color.toLowerCase() ? ' sel' : '') + '" data-i="' + i + '" data-c="' + bc.hex + '" style="background:' + bc.hex + '"' + (!ok || taken.has(bc.hex) ? ' disabled' : '') + ' title="' + (ok ? 'Boss farba: ' + bc.name : '🔒 ' + bc.name + ' - ' + bc.how) + '">' + (ok ? '' : '🔒') + '</button>'; }).join('') +
       '<input type="color" class="cust" data-i="' + i + '" value="' + p.color + '" title="Vlastná farba"></div>' +
       '<small class="hint">' + (p.bot ? 'Počítačový súper – hrá aj nakupuje sám.' : status + '<br>' + KEYSETS[i].hint + ' · alebo dotykové tlačidlá') + '</small></div>';
   }).join('');
@@ -3614,17 +3951,26 @@ function renderBoard() {
 }
 function localBoardRowsHtml() {
   const list = Object.entries(profiles).map(([k, p]) => [k, p]).sort((a, b) => b[1].wins - a[1].wins || b[1].rounds - a[1].rounds || b[1].matches - a[1].matches);
-  return list.length ? '<table class="bt"><tr><th>#</th><th>Prezývka</th><th>Zápasy</th><th>Výhry</th><th>%</th><th>Kolá</th><th>Tanky</th><th>Max LV</th><th></th></tr>' +
+  return list.length ? '<table class="bt"><tr><th>#</th><th>Prezývka</th><th>Zápasy</th><th>Výhry</th><th>%</th><th>Kolá</th><th>Tanky</th><th>Max LV</th><th>⛏ Dungeon</th><th></th></tr>' +
     list.map(([k, p], i) => '<tr><td>' + (i + 1) + '</td><td><i class="dot" style="background:' + (isColor(p.color) ? p.color : '#888') + '"></i>' + esc(p.nick) + '</td><td>' + p.matches + '</td><td>' + p.wins + '</td><td>' +
-      (p.matches ? Math.round(100 * p.wins / p.matches) : 0) + '</td><td>' + p.rounds + '</td><td>' + p.kills + '</td><td>' + p.bestLevel + '</td><td><button class="x" data-del="' + esc(k) + '" title="Zmazať profil">✕</button></td></tr>').join('') + '</table>'
+      (p.matches ? Math.round(100 * p.wins / p.matches) : 0) + '</td><td>' + p.rounds + '</td><td>' + p.kills + '</td><td>' + p.bestLevel + '</td><td>' + (p.dungeon ? p.dungeon.best : 1) + '</td><td><button class="x" data-del="' + esc(k) + '" title="Zmazať profil">✕</button></td></tr>').join('') + '</table>'
     : '<p>Zatiaľ tu nie je žiadny profil. Odohraj zápas, nech sa ti začne zbierať štatistika.</p>';
 }
+function dungeonBoardHtml(rows, myKey) {
+  if (!rows || !rows.length) return '';
+  return '<div class="boardSub">⛏ Najhlbšie poschodie Dungeonu</div><table class="bt"><tr><th>#</th><th>Prezývka</th><th>Poschodie</th></tr>' +
+    rows.map((p, i) => '<tr' + (myKey && nickKey(p.nick) === myKey ? ' class="me"' : '') + '><td>' + (['🥇', '🥈', '🥉'][i] || (i + 1)) + '</td><td><i class="dot" style="background:' + (isColor(p.color) ? p.color : '#888') + '"></i>' + esc(p.nick) + '</td><td><b>' + p.dungeon_best + '</b>' + (p.dungeon_best >= 6 ? ' 👹' : '') + '</td></tr>').join('') + '</table>';
+}
 async function renderBoardGlobal() {   // globálny rebríček zo Supabase (verejne čitateľná tabuľka profiles) - zoradený podľa veliteľskej hodnosti a výhier; keď je offline/nedostupný, potichu padne späť na lokálny zoznam
-  let rows = null;
+  let rows = null, dRows = null;
   if (sb) {
     try {
       const { data, error } = await sb.from('profiles').select('nick,color,level,wins,matches,rounds,kills,best_level').order('level', { ascending: false }).order('wins', { ascending: false }).limit(50);
       if (!error && Array.isArray(data)) rows = data;
+    } catch (_) {}
+    try {   // rebríček hĺbky Dungeonu - stĺpec dungeon_best vznikne až po spustení aktualizovaného supabase/schema.sql, dovtedy sa sekcia potichu vynechá
+      const { data, error } = await sb.from('profiles').select('nick,color,dungeon_best').gt('dungeon_best', 1).order('dungeon_best', { ascending: false }).limit(15);
+      if (!error && Array.isArray(data)) dRows = data;
     } catch (_) {}
   }
   const myKey = cloudUser ? nickKey(cloudUser.nick) : (setup.players[0].nick ? nickKey(setup.players[0].nick) : null);
@@ -3634,7 +3980,7 @@ async function renderBoardGlobal() {   // globálny rebríček zo Supabase (vere
           (p.matches ? Math.round(100 * p.wins / p.matches) : 0) + '</td><td>' + p.rounds + '</td><td>' + p.kills + '</td></tr>').join('') + '</table>'
       : '<p>Zatiaľ tu nie je žiadny hráč s Google účtom. Buď prvý!</p>')
     : '<p class="muted">Globálny rebríček sa nepodarilo načítať (skontroluj internet). Zobrazujem len profily v tomto zariadení.</p>';
-  $('boardBody').innerHTML = globalHtml + '<div class="boardSub">Profily v tomto zariadení</div>' + localBoardRowsHtml();
+  $('boardBody').innerHTML = globalHtml + dungeonBoardHtml(dRows, myKey) + '<div class="boardSub">Profily v tomto zariadení</div>' + localBoardRowsHtml();
 }
 $('boardBtn').addEventListener('click', () => { hide('settings'); renderBoard(); show('board'); });
 $('boardClose').addEventListener('click', () => { hide('board'); show('settings'); });

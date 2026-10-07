@@ -38,6 +38,10 @@ create table if not exists public.profiles (
 alter table public.profiles add column if not exists achievements jsonb not null default '[]'::jsonb;
 alter table public.profiles add column if not exists perks jsonb not null default '{}'::jsonb;
 
+-- najhlbšie dosiahnuté poschodie režimu Dungeon (rebríček hĺbky)
+alter table public.profiles add column if not exists dungeon_best int not null default 1;
+create index if not exists profiles_dungeon_best_idx on public.profiles (dungeon_best desc);
+
 -- rýchle vyhľadanie podľa prezývky (case-insensitive, rovnako ako nickKey() v game.js)
 create unique index if not exists profiles_nick_lower_idx on public.profiles (lower(nick));
 
