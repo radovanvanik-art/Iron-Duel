@@ -75,7 +75,7 @@ const MONEY_PER_DMG = 3;
 const WIN_BONUS = 300, LOSE_BONUS = 150;   // základ, rastie s číslom kola
 const ROUND_SCALE = 50;                     // +€50 víťazovi za každé ďalšie kolo
 const DIRECT_BONUS = 25, KILL_BONUS = 100, BUILD_BONUS = 20, STREAK_BONUS = 50, TREE_BONUS = 8;
-const MAX_LEVEL = 20;
+const MAX_LEVEL = 100;   // veliteľská hodnosť 1-100 (do LV20 pôvodná krivka, ďalej pomalšie a s trvalými vylepšeniami za každú hodnosť)
 const HP_PER_LEVEL = 5, HP_PER_ARMOR = 15;
 const FUEL_START = 100, FUEL_CAP = 150, FUEL_PER_PX = 0.12, FUEL_ROUND_REFILL = 60, FUEL_BUY = 50, FUEL_BUY_COST = 60;
 
@@ -88,8 +88,12 @@ const SHIELDS = SHIELD_NAMES.map((name, i) => ({
   lvl: i + 1, name, cap: 20 + 15 * i, cost: Math.round(60 * Math.pow(i + 1, 1.5) / 10) * 10, unlock: SHIELD_UNLOCK[i], color: TIER_COLORS[i],
 }));
 const tierCss = k => k >= 10 ? 'hsl(' + ((performance.now() * 0.14) % 360) + ',100%,68%)' : TIER_COLORS[k - 1];
-const xpToNext = lvl => 120 + 60 * (lvl - 1);
-const levelBonus = lvl => 100 + 50 * lvl;   // € za dosiahnutie levelu
+const xpToNext = lvl => lvl < 20 ? 120 + 60 * (lvl - 1) : 1260 + 55 * (lvl - 19);   // LV1-19 pôvodná krivka; od LV20 rastie o 55 XP za level (LV99: 5660 XP, celkovo ~280 000 XP do LV100)
+const levelBonus = lvl => lvl <= 20 ? 100 + 50 * lvl : 1100 + 20 * (lvl - 20);   // € za dosiahnutie levelu
+const hpLevelBonus = lvl => HP_PER_LEVEL * (Math.min(lvl, 20) - 1) + Math.round(1.5 * Math.max(0, lvl - 20));   // životy z hodnosti: +5 za level do LV20, potom +1,5 (spolu max +215 pri LV100)
+const RANK_NAMES = ['Rekrút', 'Vojak', 'Desiatnik', 'Rotný', 'Čatár', 'Štábny čatár', 'Rotmajster', 'Nadrotmajster', 'Práporčík', 'Podporučík', 'Poručík', 'Nadporučík', 'Kapitán', 'Major', 'Podplukovník', 'Plukovník', 'Brigádny generál', 'Generál', 'Maršal', 'Legenda'];   // nová hodnosť každých 5 levelov
+const rankName = lvl => RANK_NAMES[Math.min(RANK_NAMES.length - 1, Math.floor((Math.max(1, lvl) - 1) / 5))];
+const lvColor = lvl => lvl >= 100 ? 'hsl(' + ((performance.now() * 0.1) % 360) + ',100%,68%)' : lvl > 80 ? '#ff6a4d' : lvl > 60 ? '#ff8ad0' : lvl > 40 ? '#b58cff' : lvl > 20 ? '#9fe6ff' : '#ffd54a';   // farba odznaku LV podľa pásma
 const REPORT_LABELS = {
   hits: 'Zásahy', direct: 'Priame zásahy', build: 'Zničené budovy', kill: 'Zničenie tanku',
   win: 'Víťazstvo kola', hp: 'Zvyšné životy', streak: 'Séria víťazstiev', lose: 'Útecha', level: 'Bonus za level', quest: 'Vedľajšia misia',
@@ -152,7 +156,7 @@ const WLV_IDS = ['ap', 'missile', 'he', 'bounce', 'ricochet', 'emp', 'empBig', '
 const WLV_MAX = 5, WLV_DMG_STEP = 0.18;
 const wlvCost = lvl => Math.round((350 + 300 * lvl) / 10) * 10;
 const wlvOf = (t, id) => (t && t.wlv && t.wlv[id]) || 0;
-const dmgMul = (t, id) => (1 + WLV_DMG_STEP * wlvOf(t, id)) * (hasRelic(t, 'power') ? 1.15 : 1);
+const dmgMul = (t, id) => (1 + WLV_DMG_STEP * wlvOf(t, id)) * (hasRelic(t, 'power') ? 1.15 : 1) * (1 + 0.02 * perkRank(t && t.nick ? getProfile(t.nick) : null, 'power'));
 
 // ---------- obtiažnosť (mení silu a nárazovosť vetra) ----------
 const DIFFICULTY = {
@@ -356,11 +360,14 @@ const newProfile = (nick, color) => ({ nick, color, created: Date.now(), matches
 // Body sa NIKDE neukladajú samostatne - vždy sa dopočítajú z (najvyššia dosiahnutá hodnosť - 1) mínus už minuté, takže
 // existujúcim hráčom s vysokou hodnosťou sa body objavia hneď pri prvom otvorení obrazovky, bez potreby akejkoľvek migrácie.
 const PERKS = [
-  { id: 'cash', icon: '💰', title: 'Štartovací kapitál', desc: '+100 peňazí na začiatku zápasu za úroveň', maxRank: 3 },
-  { id: 'armor', icon: '🛡️', title: 'Veterán brnenia', desc: '+1 úroveň brnenia zadarmo na začiatku zápasu za úroveň', maxRank: 2 },
-  { id: 'fuel', icon: '⛽', title: 'Palivové nádrže', desc: '+1 úroveň paliva zadarmo na začiatku zápasu za úroveň', maxRank: 2 },
-  { id: 'xp', icon: '⭐', title: 'Skúsený veliteľ', desc: '+10 % XP zo zápasov za úroveň', maxRank: 3 },
-  { id: 'income', icon: '💵', title: 'Vojnová ekonomika', desc: '+10 % peňazí za zásahy a výhry za úroveň', maxRank: 2 },
+  { id: 'cash', icon: '💰', title: 'Štartovací kapitál', desc: '+100 peňazí na začiatku zápasu za úroveň', maxRank: 10 },
+  { id: 'armor', icon: '🛡️', title: 'Veterán brnenia', desc: '+1 úroveň brnenia zadarmo na začiatku zápasu za úroveň', maxRank: 5 },
+  { id: 'fuel', icon: '⛽', title: 'Palivové nádrže', desc: '+1 úroveň paliva zadarmo na začiatku zápasu za úroveň', maxRank: 4 },
+  { id: 'xp', icon: '⭐', title: 'Skúsený veliteľ', desc: '+10 % XP zo zápasov za úroveň', maxRank: 10 },
+  { id: 'income', icon: '💵', title: 'Vojnová ekonomika', desc: '+10 % peňazí za zásahy a výhry za úroveň', maxRank: 10 },
+  { id: 'hp', icon: '❤️', title: 'Pevný trup', desc: '+10 maximálnych životov za úroveň', maxRank: 10 },
+  { id: 'power', icon: '💥', title: 'Zosilnená munícia', desc: '+2 % poškodenia všetkých zbraní za úroveň', maxRank: 10 },
+  { id: 'repair', icon: '🔧', title: 'Poľná oprava', desc: '+3 životy na začiatku tvojho ťahu za úroveň', maxRank: 5 },
 ];
 const perkRank = (p, id) => (p && p.perks && p.perks[id]) | 0;
 const perkPointsSpent = p => !p || !p.perks ? 0 : Object.values(p.perks).reduce((s, v) => s + (v | 0), 0);
@@ -1171,6 +1178,10 @@ const ACHIEVEMENTS = [
   { id: 'elitny_nicitel', icon: '☠️', title: 'Elitný ničiteľ', desc: 'Znič 200 nepriateľských tankov.', check: p => p.kills >= 200 },
   { id: 'lv5', icon: '⭐', title: 'Hodnosť LV 5', desc: 'Dosiahni veliteľskú hodnosť 5.', check: p => (p.bestLevel || 1) >= 5 },
   { id: 'lv10', icon: '🌟', title: 'Hodnosť LV 10', desc: 'Dosiahni veliteľskú hodnosť 10.', check: p => (p.bestLevel || 1) >= 10 },
+  { id: 'lv30', icon: '🔷', title: 'Hodnosť LV 30', desc: 'Dosiahni veliteľskú hodnosť 30.', check: p => (p.bestLevel || 1) >= 30 },
+  { id: 'lv50', icon: '💠', title: 'Hodnosť LV 50', desc: 'Dosiahni veliteľskú hodnosť 50.', check: p => (p.bestLevel || 1) >= 50 },
+  { id: 'lv75', icon: '👑', title: 'Hodnosť LV 75', desc: 'Dosiahni veliteľskú hodnosť 75.', check: p => (p.bestLevel || 1) >= 75 },
+  { id: 'lv100', icon: '🌌', title: 'Legenda LV 100', desc: 'Dosiahni najvyššiu veliteľskú hodnosť 100.', check: p => (p.bestLevel || 1) >= 100 },
   { id: 'lv20', icon: '💫', title: 'Hodnosť LV 20', desc: 'Dosiahni veliteľskú hodnosť 20.', check: p => (p.bestLevel || 1) >= 20 },
   { id: 'zem_dobyta', icon: '🌍', title: 'Zem dobytá', desc: 'Dokonči kampaň na Zemi.', check: p => profileWorldUnlocked(p, 'moon') },
   { id: 'mesiac_dobyty', icon: '🌑', title: 'Mesiac dobytý', desc: 'Dokonči kampaň na Mesiaci.', check: p => profileWorldUnlocked(p, 'mars') },
@@ -1798,7 +1809,7 @@ const BOSS_KINDS = {
   giant:  { s: 2.5, hw: 150, hh: 84, hpMul: 3.4, dmgMul: 1.3 },
   triple: { s: 0.9, hw: 165, hh: 62, hpMul: 3.0, dmgMul: 1, gap: 118 },
 };
-const maxHp = t => Math.round((BASE_HP + HP_PER_ARMOR * t.armorLvl + HP_PER_LEVEL * (t.level - 1) + (hasRelic(t, 'plating') ? 30 : 0)) * (t.boss ? t.boss.hpMul : 1));
+const maxHp = t => Math.round((BASE_HP + HP_PER_ARMOR * t.armorLvl + hpLevelBonus(t.level) + 10 * perkRank(t.nick ? getProfile(t.nick) : null, 'hp') + (hasRelic(t, 'plating') ? 30 : 0)) * (t.boss ? t.boss.hpMul : 1));
 const tankHW = t => t.boss ? t.boss.hw : 24;          // polšírka zásahovej zóny
 const tankSpan = t => t.boss ? t.boss.hw * 0.6 : 18;   // polovičný rozchod, z ktorého sa berie sklon terénu pod tankom
 const bossPhase = t => t.bossPhase || 0;   // 0 = plný výkon, 1 = pod 66 % životov, 2 = pod 33 % (pozri onBossPhase)
@@ -1839,6 +1850,7 @@ function addXp(t, n) {
     (t.rep.levels = t.rep.levels || []).push(t.level);
     if (t.tot) t.tot.levels.push(t.level);
     floatText(t.x, t.y - 70, 'LEVEL ' + t.level + '!', '#ffd54a');
+    if (t.nick && t.level % 5 === 0) setTimeout(() => banner('🎖️ Nová hodnosť: ' + rankName(t.level) + ' (LV ' + t.level + ')', 2800), 600);
     tone(500, 1400, 0.4, 'triangle', 0.08);
   }
   if (t.level >= MAX_LEVEL) t.xp = 0;
@@ -2262,6 +2274,8 @@ function beginTurn(i) {
   t.fired = false; t.stun = t.emp > 0; t.emp = 0; ammoMenu.t = 0;
   t.botSt = t.bot ? { wait: 0.9, plan: null, hold: 0 } : null;
   rollWind();                                              // vietor sa mení každý ťah
+  const fr = perkRank(t.nick ? getProfile(t.nick) : null, 'repair');   // perk Poľná oprava
+  if (fr && t.hp < maxHp(t)) { const h0 = t.hp; t.hp = Math.min(maxHp(t), t.hp + 3 * fr); floatText(t.x, t.y - 90, '+' + Math.round(t.hp - h0) + ' HP', '#6bffb0'); }
   if (hasRelic(t, 'regen') && t.hp < maxHp(t)) { const h0 = t.hp; t.hp = Math.min(maxHp(t), t.hp + 8); floatText(t.x, t.y - 90, '+' + Math.round(t.hp - h0) + ' HP', '#6bffb0'); }
   if (t.boss && t.boss.ability) bossAbilityTurn(t);
   const mid = dungeon.active && dungeon.mod && dungeon.mod.id;
@@ -3550,7 +3564,7 @@ function drawHud() {
     ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.font = 'bold 15px system-ui';
     ctx.fillText(t.name, x + 12, y + 22);
     const nameW = ctx.measureText(t.name).width;
-    ctx.fillStyle = '#ffd54a'; ctx.font = 'bold 12px system-ui';
+    ctx.fillStyle = lvColor(t.level); ctx.font = 'bold 12px system-ui';
     ctx.fillText('LV ' + t.level, x + 12 + nameW + 8, y + 22);
     ctx.fillStyle = t.color; ctx.fillText('★' + t.wins, x + 12 + nameW + 8 + ctx.measureText('LV ' + t.level).width + 8, y + 22);
     ctx.font = 'bold 15px system-ui'; ctx.textAlign = 'right'; ctx.fillText('€' + t.money, x + w - 12, y + 22);
@@ -3929,14 +3943,13 @@ function tankArtNameFor(color) {   // názov obrázka tanku pre ľubovoľnú far
   for (const hex in TANK_COLOR_NAME) { const [r2, g2, b2] = rgb(hex), d = (r - r2) ** 2 + (g - g2) ** 2 + (b - b2) ** 2; if (d < bd) { bd = d; best = TANK_COLOR_NAME[hex]; } }
   return best;
 }
-const RANK_NAMES = ['Rekrút', 'Vojak', 'Desiatnik', 'Seržant', 'Poručík', 'Kapitán', 'Major', 'Plukovník', 'Generál', 'Maršal'];
 function renderHomeProfile(nick, prof) {   // herná karta veliteľa (avatar tanku, hodnosť, XP) + živé podnadpisy dlaždíc a odznaky na doku
   const lvl = prof ? (prof.level || 1) : 1, color = prof && isColor(prof.color) ? prof.color : (setup.players[0].color || PALETTE[0]);
   const art = tankArtNameFor(color), need = xpToNext(lvl), xp = prof ? (prof.xp || 0) : 0, maxed = lvl >= MAX_LEVEL;
   const pct = maxed ? 100 : Math.min(100, Math.round(100 * xp / need));
   $('homeProfile').style.setProperty('--pc', color);
-  $('homeProfile').innerHTML = '<div class="hAvatar" style="--pc:' + color + '">' + (art ? '<img src="assets/tanks/tank_hull_' + art + '.png" alt="" draggable="false">' : '<i style="width:40px;height:20px;border-radius:6px;background:' + color + '"></i>') + '<span class="hLv">LV ' + lvl + '</span></div>' +
-    '<div class="hInfo"><div class="hName">' + esc(nick || 'Hosť') + '</div><div class="hRank">' + RANK_NAMES[Math.min(RANK_NAMES.length - 1, Math.floor((lvl - 1) / 2))] + (cloudUser ? ' · ☁ Google' : '') + '</div>' +
+  $('homeProfile').innerHTML = '<div class="hAvatar" style="--pc:' + color + '">' + (art ? '<img src="assets/tanks/tank_hull_' + art + '.png" alt="" draggable="false">' : '<i style="width:40px;height:20px;border-radius:6px;background:' + color + '"></i>') + '<span class="hLv"' + (lvl > 20 ? ' style="background:' + lvColor(lvl) + '"' : '') + '>LV ' + lvl + '</span></div>' +
+    '<div class="hInfo"><div class="hName">' + esc(nick || 'Hosť') + '</div><div class="hRank">' + rankName(lvl) + (cloudUser ? ' · ☁ Google' : '') + '</div>' +
     (prof ? '<div class="hXp"><i style="width:' + pct + '%"></i></div><div class="hXpTxt">' + (maxed ? 'Maximálna hodnosť' : xp + ' / ' + need + ' XP do LV ' + (lvl + 1)) + '</div>' +
       '<div class="hChips"><span class="hChip">🏆 ' + (prof.wins || 0) + '</span><span class="hChip">💥 ' + (prof.kills || 0) + '</span><span class="hChip">🎮 ' + (prof.matches || 0) + '</span></div>'
       : '<div class="hXpTxt">Prihlás sa cez Google alebo hraj s prezývkou, nech sa ti ukladá postup.</div>') + '</div>';
