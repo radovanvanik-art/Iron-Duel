@@ -1472,6 +1472,17 @@ function renderStoryList() {
   }
   startGlobeLoop();
 }
+// verzia hry v rohu prihlasovacej a domovskej obrazovky: číslo sa berie z adresy skriptu (game.js?v=N), takže vždy ukazuje, ktorý súbor sa naozaj načítal
+const GAME_VERSION = (() => { try { const m = /[?&]v=(\d+)/.exec((document.currentScript || {}).src || ''); return m ? 'v' + m[1] : 'v?'; } catch (_) { return 'v?'; } })();
+for (const id of ['login', 'home']) {
+  const el = $(id); if (!el) continue;
+  const tag = document.createElement('div'); tag.className = 'verTag'; tag.textContent = 'verzia ' + GAME_VERSION; tag.title = 'Ťukni = vynútiť aktualizáciu hry';
+  tag.addEventListener('click', () => ask('Vymazať uloženú verziu hry a načítať ju znova? (postup a profil zostanú)', async () => {
+    try { if ('serviceWorker' in navigator) (await navigator.serviceWorker.getRegistrations()).forEach(r => r.unregister()); if (window.caches) (await caches.keys()).forEach(k => caches.delete(k)); } catch (_) {}
+    location.reload();
+  }));
+  el.appendChild(tag);
+}
 $('homeStoryBtn').addEventListener('click', () => { hide('home'); focusFrontierWorld(); renderStoryList(); show('story'); });
 $('storyClose').addEventListener('click', () => { stopGlobeLoop(); hide('story'); show('home'); });
 document.addEventListener('click', e => { if (e.target.closest('.btn,.panelBtn,.dashBtn,.worldTab,.relicCard,.radarBtn,.swb')) tone(520, 340, 0.05, 'square', 0.03); });   // jemné kovové "cvaknutie" pri klikoch v menu (len ak už beží zvuk)
