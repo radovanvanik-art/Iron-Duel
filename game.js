@@ -3667,6 +3667,22 @@ function drawHud() {
 }
 
 // ---------- UI ----------
+// výška viditeľného okna: na telefónoch (iOS Safari/Chrome so zmenšujúcimi sa lištami) sa výška `position: fixed` vrstvy často líši od skutočne viditeľnej plochy,
+// preto sa menu viaže na visualViewport.height cez CSS premennú --app-h (nie na 100% / inset:0)
+function syncViewportVars() {
+  const vv = window.visualViewport;
+  let h = Math.round(vv ? vv.height : window.innerHeight);
+  // hra pridaná na plochu (iOS standalone): viditeľná plocha je celá obrazovka, ale okno reportuje nižšiu výšku (chýba pás nad domovskou lištou) - doplň ju z rozmerov obrazovky
+  const standalone = !!(navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches));
+  if (standalone) {
+    const portrait = window.innerHeight >= window.innerWidth, sh = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+    if (sh > h && sh - h < 160) h = sh;
+  }
+  document.documentElement.style.setProperty('--app-h', h + 'px');
+}
+syncViewportVars();
+['resize', 'orientationchange'].forEach(ev => addEventListener(ev, () => { syncViewportVars(); setTimeout(syncViewportVars, 300); }));
+if (window.visualViewport) ['resize', 'scroll'].forEach(ev => window.visualViewport.addEventListener(ev, syncViewportVars));
 const FIT_IDS = ['login', 'home', 'dungeon', 'settings', 'credits'];
 function fitMenus() {   // automaticky prispôsobí karty menu oknu: ak sú vyššie/širšie ako okno, zmenší ich (bez posúvania), na veľkom okne ich mierne zväčší
   const vw = window.innerWidth;
@@ -3674,11 +3690,13 @@ function fitMenus() {   // automaticky prispôsobí karty menu oknu: ak sú vyš
     const ov = $(id); if (!ov || !ov.classList.contains('show')) return;
     const card = ov.querySelector('.card'); if (!card) return;
     card.style.zoom = '';
-    const cs = getComputedStyle(ov), avail = ov.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
-    const need = card.offsetHeight + 46, w = card.offsetWidth || 1;   // 46 px rezerva na okraje a nápis verzie
+    syncViewportVars();
+    const cs = getComputedStyle(ov), avail = ov.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);   // výška overlayu = --app-h (viditeľná plocha)
+    const need = card.offsetHeight + 56, w = card.offsetWidth || 1;   // 46 px rezerva na okraje a nápis verzie
     let z = Math.min(avail / need, (vw - 16) / w, vw > 820 ? 1.25 : 1);
     z = Math.max(0.5, z); if (z > 0.97 && z < 1.04) z = 1;
     if (z !== 1) card.style.zoom = z.toFixed(3);
+    if (card.offsetHeight * (z || 1) + 8 <= avail) ov.scrollTop = 0;   // všetko sa zmestilo - nech nezostane odrolované z minula
   });
 }
 let fitT = 0; const fitSoon = () => { clearTimeout(fitT); fitT = setTimeout(fitMenus, 40); };
