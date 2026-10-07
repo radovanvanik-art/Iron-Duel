@@ -147,7 +147,7 @@ const WLV_IDS = ['ap', 'missile', 'he', 'bounce', 'ricochet', 'emp', 'empBig', '
 const WLV_MAX = 5, WLV_DMG_STEP = 0.18;
 const wlvCost = lvl => Math.round((350 + 300 * lvl) / 10) * 10;
 const wlvOf = (t, id) => (t && t.wlv && t.wlv[id]) || 0;
-const dmgMul = (t, id) => 1 + WLV_DMG_STEP * wlvOf(t, id);
+const dmgMul = (t, id) => (1 + WLV_DMG_STEP * wlvOf(t, id)) * (hasRelic(t, 'power') ? 1.15 : 1);
 
 // ---------- obtiažnosť (mení silu a nárazovosť vetra) ----------
 const DIFFICULTY = {
@@ -943,11 +943,11 @@ function storyProgressForNick(nick) {   // postup kampane patrí k profilu prez�
 }
 // ---------- postup režimu Dungeon (samostatný od kampane, ale ukladá sa rovnakým vzorom - pozri vyššie) ----------
 const DUNGEON_KEY = 'ironDuelDungeon_v1';   // záložné/hosťovské úložisko, rovnaký vzor ako STORY_KEY
-function defaultDungeonProgress() { return { floor: 1, best: 1 }; }
+function defaultDungeonProgress() { return { floor: 1, best: 1, relics: [], pending: null }; }
 function loadLegacyGlobalDungeonProgress() {
   try {
     const v = JSON.parse(localStorage.getItem(DUNGEON_KEY));
-    if (v && typeof v === 'object') return { floor: clampInt(v.floor, 1, 999999, 1), best: clampInt(v.best, 1, 999999, 1) };
+    if (v && typeof v === 'object') return { floor: clampInt(v.floor, 1, 999999, 1), best: clampInt(v.best, 1, 999999, 1), relics: Array.isArray(v.relics) ? v.relics : [], pending: Array.isArray(v.pending) ? v.pending : null };
   } catch (_) {}
   return null;
 }
@@ -956,6 +956,39 @@ function dungeonProgressForNick(nick) {
   const p = Object.prototype.hasOwnProperty.call(profiles, key) ? profiles[key] : (profiles[key] = newProfile(nick, PALETTE[0]));
   if (!p.dungeon) { p.dungeon = loadLegacyGlobalDungeonProgress() || defaultDungeonProgress(); saveProfiles(); }
   return p.dungeon;
+}
+// relikvie: trvalé bonusy v Dungeone (patria profilu, prežijú prehru). Po každom bossovi si hráč vyberie 1 z 3 ešte nezískaných.
+const RELICS = {
+  plating: { icon: '🛡️', name: 'Pancierová vložka', desc: '+30 max. životov' },
+  power:   { icon: '💥', name: 'Zosilnená munícia', desc: '+15 % poškodenia všetkých zbraní' },
+  regen:   { icon: '❤️', name: 'Opravárske drony', desc: '+8 životov na začiatku tvojho ťahu' },
+  tank:    { icon: '⛽', name: 'Rezervná nádrž', desc: '+60 paliva navyše' },
+  cash:    { icon: '💰', name: 'Zberateľ', desc: '+25 % peňazí za poschodie' },
+  scout:   { icon: '🎒', name: 'Prieskumník', desc: 'Každé poschodie ti nájde munícii navyše (istý lup)' },
+};
+const hasRelic = (t, id) => !!(t && t.team === 0 && typeof dungeon !== 'undefined' && dungeon.active && dungeon.progress && (dungeon.progress.relics || []).includes(id));
+function rollRelicChoices() {
+  const have = new Set(dungeon.progress.relics || []), pool = Object.keys(RELICS).filter(id => !have.has(id));
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  return pool.slice(0, 3);
+}
+function renderRelics(boxId) {   // zoznam získaných relikvií + (ak čaká výber) tri karty na výber; použité na koncovej obrazovke aj na obrazovke Dungeonu
+  const box = $(boxId); if (!box) return;
+  const pr = dungeon.progress, own = (pr.relics || []).map(id => RELICS[id]).filter(Boolean);
+  let html = '';
+  if (pr.pending && pr.pending.length) {
+    html += '<div class="relicHead">🏺 Vyber si relikviu</div><div class="relicRow">' + pr.pending.map(id => RELICS[id] ? '<button class="relicCard" data-relic="' + id + '"><span class="ri2">' + RELICS[id].icon + '</span><b>' + esc(RELICS[id].name) + '</b><small>' + esc(RELICS[id].desc) + '</small></button>' : '').join('') + '</div>';
+  }
+  if (own.length) html += '<div class="relicOwn">Relikvie: ' + own.map(r => '<span title="' + esc(r.name + ' – ' + r.desc) + '">' + r.icon + '</span>').join(' ') + '</div>';
+  box.innerHTML = html; box.style.display = html ? '' : 'none';
+  const pend = !!(pr.pending && pr.pending.length);
+  if (boxId === 'endRelics') $('dungeonNextBtn').disabled = pend; else $('dungeonEnterBtn').disabled = pend;
+}
+function pickRelic(id) {
+  const pr = dungeon.progress; if (!pr.pending || !pr.pending.includes(id) || !RELICS[id]) return;
+  pr.relics = (pr.relics || []).concat(id); pr.pending = null; saveDungeonProgress();
+  banner(RELICS[id].icon + ' Relikvia: ' + RELICS[id].name, 2200); tone(600, 1200, 0.25, 'triangle', 0.07);
+  renderRelics('endRelics'); renderRelics('dungeonRelics');
 }
 function dungeonBestOf(nick) {   // najhlbšie poschodie profilu (hosť = záložné úložisko)
   const p = nick ? profiles[nickKey(nick)] : null;
@@ -1430,6 +1463,7 @@ $('storyClose').addEventListener('click', () => { stopGlobeLoop(); hide('story')
 $('homeDungeonBtn').addEventListener('click', () => { hide('home'); renderDungeonScreen(); show('dungeon'); });
 $('dungeonClose').addEventListener('click', () => { hide('dungeon'); show('home'); });
 $('dungeonEnterBtn').addEventListener('click', () => startDungeon());
+for (const id of ['endRelics', 'dungeonRelics']) $(id).addEventListener('click', e => { const c = e.target.closest('[data-relic]'); if (c) pickRelic(c.dataset.relic); });
 $('dungeonNextBtn').addEventListener('click', () => dungeonEnterFloor());
 $('dungeonRetryBtn').addEventListener('click', () => dungeonEnterFloor());
 $('dungeonExitBtn').addEventListener('click', () => { hide('end'); toMenu(); });
@@ -1737,7 +1771,7 @@ const BOSS_KINDS = {
   giant:  { s: 2.5, hw: 150, hh: 84, hpMul: 3.4, dmgMul: 1.3 },
   triple: { s: 0.9, hw: 165, hh: 62, hpMul: 3.0, dmgMul: 1, gap: 118 },
 };
-const maxHp = t => Math.round((BASE_HP + HP_PER_ARMOR * t.armorLvl + HP_PER_LEVEL * (t.level - 1)) * (t.boss ? t.boss.hpMul : 1));
+const maxHp = t => Math.round((BASE_HP + HP_PER_ARMOR * t.armorLvl + HP_PER_LEVEL * (t.level - 1) + (hasRelic(t, 'plating') ? 30 : 0)) * (t.boss ? t.boss.hpMul : 1));
 const tankHW = t => t.boss ? t.boss.hw : 24;          // polšírka zásahovej zóny
 const tankSpan = t => t.boss ? t.boss.hw * 0.6 : 18;   // polovičný rozchod, z ktorého sa berie sklon terénu pod tankom
 const bossPhase = t => t.bossPhase || 0;   // 0 = plný výkon, 1 = pod 66 % životov, 2 = pod 33 % (pozri onBossPhase)
@@ -1759,7 +1793,7 @@ function onBossPhase(t, phase) {
   floatText(t.x, t.y - t.boss.hh - 50, giant ? 'FÁZA ' + (phase + 1) : 'TANK ZNIČENÝ', '#ff6a4a');
 }
 function makeBoss(t, kind) { t.boss = Object.assign({ kind }, BOSS_KINDS[kind]); t.k = t.boss.s; t.artPivotH = tankArtPivotH(t.color) * t.k; }
-const fuelCap = t => FUEL_CAP + 50 * t.fuelLvl;
+const fuelCap = t => FUEL_CAP + 50 * t.fuelLvl + (hasRelic(t, 'tank') ? 60 : 0);
 
 function reward(t, amount, key) {
   if (!t || amount <= 0) return;
@@ -2015,6 +2049,7 @@ function renderDungeonScreen() {
   $('dungeonInfo').innerHTML = 'Aktuálne poschodie: <b>' + floor + '</b>' + (boss ? ' · 👹 poschodie bossa: ' + dungeonBossName(floor) : '') +
     '<br>Najhlbšie dosiahnuté poschodie: <b>' + best + '</b>' +
     '<br><small>Ty (a prípadne spoluhráči na tejto obrazovke) proti botom - prestrieľaj sa hlinou k súperom. Pozor: vlastný výbuch v tesnej chodbe zasiahne aj teba!</small>';
+  renderRelics('dungeonRelics');
   const mod = dungeonModFor(floor);
   if (mod) $('dungeonInfo').innerHTML += '<br><b style="color:#ffd54a">' + mod.icon + ' Modifikátor: ' + mod.name + '</b> <small>(+' + Math.round((mod.pay - 1) * 100) + ' % odmena)</small><br><small>' + mod.desc + '</small>';
   $('dungeonEnterBtn').textContent = '▶ Vstúpiť · Poschodie ' + floor;
@@ -2092,6 +2127,7 @@ function beginTurn(i) {
   t.fired = false; t.stun = t.emp > 0; t.emp = 0; ammoMenu.t = 0;
   t.botSt = t.bot ? { wait: 0.9, plan: null, hold: 0 } : null;
   rollWind();                                              // vietor sa mení každý ťah
+  if (hasRelic(t, 'regen') && t.hp < maxHp(t)) { const h0 = t.hp; t.hp = Math.min(maxHp(t), t.hp + 8); floatText(t.x, t.y - 90, '+' + Math.round(t.hp - h0) + ' HP', '#6bffb0'); }
   const mid = dungeon.active && dungeon.mod && dungeon.mod.id;
   if (mid === 'storm') wind = (Math.random() < 0.5 ? -1 : 1) * Math.round(rand(55, 85));
   if (mid === 'shield' && t.team === 1 && t.shieldMax && t.shield < t.shieldMax) { t.shield = Math.min(t.shieldMax, t.shield + Math.ceil(t.shieldMax * 0.12)); floatText(t.x, t.y - 90, '+ŠTÍT', '#8cf'); }
@@ -2234,16 +2270,16 @@ function afterRoundEnd() {
   if (w) {
     state = 'matchEnd'; clearSave(); hide('pause');
     $('endNormalBtns').style.display = ''; $('endStoryBtns').style.display = 'none'; $('endDungeonBtns').style.display = 'none';
-    renderLoot([]);
+    renderLoot([]); if ($('endRelics')) $('endRelics').style.display = 'none';
     if (dungeon.active) {
       const floor = dungeon.progress.floor, boss = floor % 5 === 0, won = w.team === 0;
       const me = tanks.find(t => t.team === 0), lootItems = [];
       const profMe = me && me.nick ? profiles[nickKey(me.nick)] : null, achBefore = new Set(profMe && profMe.achievements || []), bestBefore = dungeonBestOf(me && me.nick);
       if (won && me) {   // odmena za vyčistené poschodie: peniaze + zbrane (pri bossovi viac a lepšie), nech sa oplatí ísť hlbšie
-        const pay = dungeon.mod ? dungeon.mod.pay : 1, cash = Math.round((150 + floor * 25 + (boss ? 500 + floor * 20 : 0)) * pay);
-        me.money += cash; lootItems.push({ icon: '💰', label: '+€' + cash, sub: dungeon.mod ? dungeonModTag() + ' +' + Math.round((pay - 1) * 100) + ' %' : 'Peniaze', color: '#f2c230' });
+        const pay = (dungeon.mod ? dungeon.mod.pay : 1) * (hasRelic(me, 'cash') ? 1.25 : 1), cash = Math.round((150 + floor * 25 + (boss ? 500 + floor * 20 : 0)) * pay);
+        me.money += cash; lootItems.push({ icon: '💰', label: '+€' + cash, sub: pay > 1 ? (dungeon.mod ? dungeonModTag() + ' ' : '') + '+' + Math.round((pay - 1) * 100) + ' %' : 'Peniaze', color: '#f2c230' });
         const drops = boss ? (floor >= 15 ? ['nukeS', 'repairBig'] : floor >= 10 ? ['firestorm', 'repairBig'] : ['he', 'repairBig'])
-          : (Math.random() < 0.4 ? [['missile', 'repair', 'bounce'][floor % 3]] : []);
+          : (hasRelic(me, 'scout') || Math.random() < 0.4 ? [['missile', 'repair', 'bounce'][floor % 3]] : []);
         drops.forEach(id => {
           if (!AMMO[id] || me.ammo[id] == null) return;
           me.ammo[id] = Math.min(capOf(id), me.ammo[id] + 2);
@@ -2253,6 +2289,7 @@ function afterRoundEnd() {
       if (won) {   // postup sa ukladá hneď po výhre (nie až po kliknutí "Ďalšie poschodie"), nech sa nestratí ani keď hráč potom odíde do menu
         dungeon.progress.floor = floor + 1;
         dungeon.progress.best = Math.max(dungeon.progress.best, dungeon.progress.floor);
+        if (boss && !(dungeon.progress.pending && dungeon.progress.pending.length)) { const ch = rollRelicChoices(); dungeon.progress.pending = ch.length ? ch : null; }   // po bossovi výber relikvie
         saveDungeonProgress();
       }
       if (won && profMe && dungeon.mod) {   // počítadlá pre odznaky za modifikátory ("bez straty životov" = hráčov tank je na plných životoch)
@@ -2266,7 +2303,7 @@ function afterRoundEnd() {
         ACHIEVEMENTS.filter(a => achNow.has(a.id) && !achBefore.has(a.id)).forEach(a => lootItems.push({ icon: a.icon, label: a.title, sub: 'Nový odznak!', color: '#ffd54a', badge: true }));
         BOSS_COLORS.filter(c => bestBefore < c.floor && dungeon.progress.best >= c.floor).forEach(c => lootItems.push({ art: c.id, label: c.name, sub: 'Nová farba tanku!', color: c.hex, badge: true }));
       }
-      renderLoot(lootItems);
+      renderLoot(lootItems); renderRelics('endRelics');
       $('endTitle').textContent = won ? ('Poschodie ' + floor + ' vyčistené!' + (boss ? ' 👹' : '')) : ('Padli ste na poschodí ' + floor);
       $('endTitle').style.color = won ? '#5fd35f' : '#e5484d';
       $('endSub').innerHTML = won
