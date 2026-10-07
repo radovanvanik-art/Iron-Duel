@@ -3679,8 +3679,13 @@ function syncViewportVars() {
     if (sh > h && sh - h < 160) h = sh;
   }
   document.documentElement.style.setProperty('--app-h', h + 'px');
+  // posun viditeľnej plochy voči rozloženiu (iOS: lišty prehliadača, odrolovaná stránka) - vrstvy menu sa o ňu posunú, nech sedia presne na viditeľnú plochu
+  const ot = vv ? Math.max(0, Math.round(vv.offsetTop)) : 0, ol = vv ? Math.max(0, Math.round(vv.offsetLeft)) : 0;
+  document.documentElement.style.setProperty('--vv-top', ot + 'px'); document.documentElement.style.setProperty('--vv-left', ol + 'px');
 }
 syncViewportVars();
+const unscroll = () => { if (window.scrollY || window.scrollX) window.scrollTo(0, 0); };   // stránka sa nikdy nemá odrolovať (menu aj hra sú fixné vrstvy)
+addEventListener('scroll', unscroll, { passive: true });
 ['resize', 'orientationchange'].forEach(ev => addEventListener(ev, () => { syncViewportVars(); setTimeout(syncViewportVars, 300); }));
 if (window.visualViewport) ['resize', 'scroll'].forEach(ev => window.visualViewport.addEventListener(ev, syncViewportVars));
 const FIT_IDS = ['login', 'home', 'dungeon', 'settings', 'credits'];
@@ -3704,7 +3709,7 @@ function fitMenus() {   // automaticky prispôsobí karty menu oknu: ak sú vyš
     if (h * z + 8 <= avail) ov.scrollTop = 0;   // všetko sa zmestilo - nech nezostane odrolované z minula
     lastZ = z; lastAvail = avail;
   });
-  const diag = ' · ' + vw + '×' + Math.round(window.innerHeight) + '/' + (document.documentElement.style.getPropertyValue('--app-h') || '?').replace('px', '') + (lastZ !== 1 ? ' · ×' + lastZ.toFixed(2) : '');
+  const vv = window.visualViewport, diag = ' · ' + vw + '×' + Math.round(window.innerHeight) + '/' + (document.documentElement.style.getPropertyValue('--app-h') || '?').replace('px', '') + ' · t' + Math.round(vv ? vv.offsetTop : 0) + ' y' + Math.round(window.scrollY || 0) + (lastZ !== 1 ? ' · ×' + lastZ.toFixed(2) : '');
   document.querySelectorAll('.verTag').forEach(el => { el.dataset.diag = diag; });   // rozmery okna v nápise verzie - pomôžu pri ladení na rôznych telefónoch
 }
 let fitT = 0; const fitSoon = () => { clearTimeout(fitT); fitT = setTimeout(fitMenus, 40); };
