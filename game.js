@@ -3686,10 +3686,11 @@ function renderHome() {
   const nick = setup.players[0].nick, prof = nick ? getProfile(nick) : null;
   $('homeGreet').textContent = nick ? ((cloudUser ? 'Prihlásený cez Google ako ' : 'Hráš ako ') + nick + (prof ? ' · veliteľská hodnosť LV ' + (prof.level || 1) : '')) : '';
   const sv = readSave();
-  $('homeContBtn').style.display = sv ? '' : 'none';
+  $('homeContBtn').style.display = sv ? 'block' : 'none';
   if (sv) $('homeContBtn').textContent = '▶ Pokračovať: kolo ' + sv.round + ' · ' + sv.players.length + ' hráči';
   renderHomeDaily(prof);
   renderHomeWeekly(prof);
+  renderHomeProfile(nick, prof);
   importCandidateNick = null;
   const importBtn = $('homeImportBtn');
   if (cloudUser) {
@@ -3700,6 +3701,27 @@ function renderHome() {
       importBtn.style.display = '';
     } else importBtn.style.display = 'none';
   } else importBtn.style.display = 'none';
+}
+const RANK_NAMES = ['Rekrút', 'Vojak', 'Desiatnik', 'Seržant', 'Poručík', 'Kapitán', 'Major', 'Plukovník', 'Generál', 'Maršal'];
+function renderHomeProfile(nick, prof) {   // herná karta veliteľa (avatar tanku, hodnosť, XP) + živé podnadpisy dlaždíc a odznaky na doku
+  const lvl = prof ? (prof.level || 1) : 1, color = prof && isColor(prof.color) ? prof.color : (setup.players[0].color || PALETTE[0]);
+  const art = TANK_COLOR_NAME[String(color).toLowerCase()], need = xpToNext(lvl), xp = prof ? (prof.xp || 0) : 0, maxed = lvl >= MAX_LEVEL;
+  const pct = maxed ? 100 : Math.min(100, Math.round(100 * xp / need));
+  $('homeProfile').style.setProperty('--pc', color);
+  $('homeProfile').innerHTML = '<div class="hAvatar" style="--pc:' + color + '">' + (art ? '<img src="assets/tanks/tank_hull_' + art + '.png" alt="" draggable="false">' : '<i style="width:40px;height:20px;border-radius:6px;background:' + color + '"></i>') + '<span class="hLv">LV ' + lvl + '</span></div>' +
+    '<div class="hInfo"><div class="hName">' + esc(nick || 'Hosť') + '</div><div class="hRank">' + RANK_NAMES[Math.min(RANK_NAMES.length - 1, Math.floor((lvl - 1) / 2))] + (cloudUser ? ' · ☁ Google' : '') + '</div>' +
+    (prof ? '<div class="hXp"><i style="width:' + pct + '%"></i></div><div class="hXpTxt">' + (maxed ? 'Maximálna hodnosť' : xp + ' / ' + need + ' XP do LV ' + (lvl + 1)) + '</div>' +
+      '<div class="hChips"><span class="hChip">🏆 ' + (prof.wins || 0) + '</span><span class="hChip">💥 ' + (prof.kills || 0) + '</span><span class="hChip">🎮 ' + (prof.matches || 0) + '</span></div>'
+      : '<div class="hXpTxt">Prihlás sa cez Google alebo hraj s prezývkou, nech sa ti ukladá postup.</div>') + '</div>';
+  const un = story.progress ? story.progress.unlocked : 1;
+  $('homeStorySub').textContent = 'Misia ' + Math.min(un, STORY_MISSIONS.length) + ' / ' + STORY_MISSIONS.length;
+  let dgSub = 'Nekonečná veža';
+  try { if (!dungeon.progress) refreshDungeonProgressSource(); const dp = dungeon.progress; if (dp) dgSub = 'Poschodie ' + dp.floor + (dp.floor % 5 === 0 ? ' · 👹 BOSS' : ' · rekord ' + dp.best); } catch (_) {}
+  $('homeDungeonSub').textContent = dgSub;
+  const ach = prof && Array.isArray(prof.achievements) ? prof.achievements.length : 0, ab = $('homeAchBadge');
+  ab.style.display = prof ? '' : 'none'; ab.textContent = ach + '/' + ACHIEVEMENTS.length; ab.className = 'hBadge ok';
+  const pp = prof ? perkPointsAvailable(prof) : 0, pb = $('homePerksBadge');
+  pb.style.display = pp > 0 ? '' : 'none'; pb.textContent = pp; pb.className = 'hBadge';
 }
 function renderHomeDaily(prof) {
   const card = $('homeDailyCard');
