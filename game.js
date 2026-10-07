@@ -3615,7 +3615,26 @@ function drawHud() {
 }
 
 // ---------- UI ----------
-function show(id) { $(id).classList.add('show'); }
+const FIT_IDS = ['login', 'home', 'dungeon', 'settings', 'credits'];
+function fitMenus() {   // automaticky prispôsobí karty menu oknu: ak sú vyššie/širšie ako okno, zmenší ich (bez posúvania), na veľkom okne ich mierne zväčší
+  const vw = window.innerWidth;
+  FIT_IDS.forEach(id => {
+    const ov = $(id); if (!ov || !ov.classList.contains('show')) return;
+    const card = ov.querySelector('.card'); if (!card) return;
+    card.style.zoom = '';
+    const cs = getComputedStyle(ov), avail = ov.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
+    const need = card.offsetHeight + 46, w = card.offsetWidth || 1;   // 46 px rezerva na okraje a nápis verzie
+    let z = Math.min(avail / need, (vw - 16) / w, vw > 820 ? 1.25 : 1);
+    z = Math.max(0.5, z); if (z > 0.97 && z < 1.04) z = 1;
+    if (z !== 1) card.style.zoom = z.toFixed(3);
+  });
+}
+let fitT = 0; const fitSoon = () => { clearTimeout(fitT); fitT = setTimeout(fitMenus, 40); };
+addEventListener('resize', fitSoon); addEventListener('orientationchange', () => setTimeout(fitMenus, 300));
+if (window.visualViewport) window.visualViewport.addEventListener('resize', fitSoon);
+document.addEventListener('fullscreenchange', fitSoon); document.addEventListener('webkitfullscreenchange', fitSoon);
+FIT_IDS.forEach(id => { const el = $(id); if (el && window.MutationObserver) new MutationObserver(fitSoon).observe(el, { childList: true, subtree: true, characterData: true }); });   // obsah sa mení (výzvy, relikvie, modifikátory) - výška sa musí znova zmerať
+function show(id) { $(id).classList.add('show'); requestAnimationFrame(fitMenus); }
 function hide(id) { $(id).classList.remove('show'); }
 let bannerT = 0;
 function banner(text, ms) {
@@ -3772,6 +3791,14 @@ function toggleFullscreen() {
   } else goFullscreen();
 }
 $('fsBtn').addEventListener('click', toggleFullscreen);
+const fsSupported = !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
+const isStandalone = !!(navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches));
+function menuFullscreen() {   // celá obrazovka z menu; iPhone Safari Fullscreen API nepozná - tam pomôže len "Pridať na plochu"
+  if (fsSupported) toggleFullscreen();
+  else banner(isStandalone ? 'Hra už beží na celú obrazovku.' : '📱 iPhone: tlačidlo Zdieľať → „Pridať na plochu“, potom hru spusti z plochy - pobeží na celú obrazovku.', 6500);
+}
+for (const id of ['menuFsBtn', 'fsSetBtn']) { const b = $(id); if (b) b.addEventListener('click', menuFullscreen); }
+if (isStandalone) { const b = $('menuFsBtn'); if (b) b.style.display = 'none'; }
 document.addEventListener('fullscreenchange', resize); document.addEventListener('webkitfullscreenchange', resize);
 $('startBtn').addEventListener('click', () => { goFullscreen(); startMatch(); });
 $('againBtn').addEventListener('click', () => { goFullscreen(); startMatch(true); });
