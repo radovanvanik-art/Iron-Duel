@@ -68,7 +68,7 @@
   #pauseBtn{position:fixed;top:2px;left:50%;transform:translateX(-50%);width:28px;height:26px;display:none;z-index:6;border-radius:6px;border:1px solid rgba(255,255,255,.4);background:rgba(20,26,40,.7);color:#fff;font-size:13px;padding:0;cursor:pointer;touch-action:manipulation}
   body[data-state="play"] #pauseBtn,body[data-state="roundEnd"] #pauseBtn{display:block}
 
-  .overlay{position:fixed;inset:0 0 auto 0;height:100vh;height:100dvh;height:var(--app-h,100dvh);display:none;z-index:10;background:rgba(5,8,14,.72);padding:12px;overflow:auto;overscroll-behavior:contain}
+  .overlay{position:fixed;inset:var(--vv-top,0px) 0 auto 0;height:100vh;height:100dvh;height:var(--app-h,100dvh);display:none;z-index:10;background:rgba(5,8,14,.72);padding:12px;overflow:auto;overscroll-behavior:contain}
   #end{background:rgba(5,8,14,.55) url('assets/end-bg.jpg') center/cover}
   #end.win{background:rgba(5,8,14,.45) url('assets/end-bg-win.jpg') center/cover}   /* víťazstvo misie v kampani - samostatná AI fotka (triumfálny východ slnka) */
   #end.lose{background:rgba(5,8,14,.6) url('assets/end-bg-lose.jpg') center/cover}   /* prehra misie v kampani - samostatná AI fotka (zničený tank) */
@@ -324,7 +324,7 @@
 
   /* ---------- ilustrované pozadie prihlásenia / domovskej obrazovky / nastavenia / kreditov / zápasu ---------- */
   .hub.overlay{background:transparent;padding:0;align-items:flex-start}
-  .menuBg{position:fixed;inset:0 0 auto 0;height:var(--app-h,100dvh);z-index:0;overflow:hidden;background:#0a1030}
+  .menuBg{position:fixed;inset:var(--vv-top,0px) 0 auto 0;height:var(--app-h,100dvh);z-index:0;overflow:hidden;background:#0a1030}
   .menuBg svg{width:100%;height:100%;display:block}
   /* AI-generovaný (Hugging Face) interiér veliteľskej kabíny tanku - pozadie všetkých obrazoviek menu (prihlásenie, domov, nastavenia, kredity, odznaky, vylepšenia, priatelia, výber zápasu, tutoriál).
      Farebne doladené (duotone filter) na modro-oceľovú HUD paletu hry namiesto surovej fotorealistickej fotky - samostatná ::before vrstva, aby filter nezasiahol scan-lines/vinetu v ::after. */
@@ -429,7 +429,7 @@
   #home .dashBtn .pLabel{font-size:10px;font-weight:700}
 
   /* ---------- "brutálny" veliteľský kokpit - kovový rám okolo obrazovky, nity, mosadzné lemy, výstražné svetlá ---------- */
-  .cockpitFrame{position:fixed;inset:0 0 auto 0;height:var(--app-h,100dvh);z-index:0;pointer-events:none}
+  .cockpitFrame{position:fixed;inset:var(--vv-top,0px) 0 auto 0;height:var(--app-h,100dvh);z-index:0;pointer-events:none}
   .cfCorner{position:absolute;width:58px;height:58px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.65))}
   .cfCorner svg{width:100%;height:100%;display:block}
   .cfCorner.tl{top:8px;left:8px}
@@ -655,10 +655,10 @@
   .encBox{margin:8px 0 12px;padding:12px 16px;border-radius:14px;text-align:center;background:radial-gradient(ellipse at 50% 0%,rgba(201,167,255,.22),transparent 65%),linear-gradient(180deg,#241a3a,#120d20);border:2px solid #8a5ad6;box-shadow:0 0 24px rgba(138,90,214,.45),inset 0 1px 0 rgba(255,255,255,.12);animation:lootPop .5s cubic-bezier(.2,.9,.25,1.4) both}
   .encHead{font-family:'Black Ops One',system-ui,sans-serif;font-size:clamp(18px,3.4vw,24px);letter-spacing:.06em;color:#d8c6ff;text-shadow:0 0 16px rgba(201,167,255,.7);margin-bottom:6px}
   .encBox p{background:none;border:0;padding:0;margin:6px 0;color:#d6cfe8}
-  .verTag{position:fixed;left:0;right:0;top:calc(var(--app-h,100dvh) - 24px);z-index:3;text-align:center;font-size:10.5px;letter-spacing:.1em;color:rgba(255,255,255,.38);cursor:pointer;touch-action:manipulation;text-transform:uppercase;pointer-events:auto}
+  .verTag{position:fixed;left:0;right:0;top:calc(var(--vv-top,0px) + var(--app-h,100dvh) - 24px);z-index:3;text-align:center;font-size:10.5px;letter-spacing:.1em;color:rgba(255,255,255,.38);cursor:pointer;touch-action:manipulation;text-transform:uppercase;pointer-events:auto}
   .verTag:hover{color:rgba(255,213,74,.8)}
   /* tlačidlo celej obrazovky v menu */
-  #menuFsBtn{position:fixed;top:max(8px,env(safe-area-inset-top));right:max(8px,env(safe-area-inset-right));z-index:12;display:none;width:38px;height:38px;border-radius:10px;cursor:pointer;touch-action:manipulation;font-size:18px;color:#eef2f8;
+  #menuFsBtn{position:fixed;top:calc(var(--vv-top,0px) + max(8px,env(safe-area-inset-top)));right:max(8px,env(safe-area-inset-right));z-index:12;display:none;width:38px;height:38px;border-radius:10px;cursor:pointer;touch-action:manipulation;font-size:18px;color:#eef2f8;
     background:linear-gradient(180deg,#434a5d,#262b39);border:2px solid #14171f;box-shadow:0 3px 0 rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.18)}
   #menuFsBtn:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.45)}
   body[data-state="menu"] #menuFsBtn{display:block}
@@ -1003,4 +1003,4 @@
     window.__firestoreDb = firebase.firestore();
   } catch (_) { /* mimo web hostingu (napr. Claude Artifact) - použije sa záložné window.claude db */ }
 </script>
-<script src="game.js?v=53"></script>
+<script src="game.js?v=54"></script>
