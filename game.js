@@ -83,7 +83,8 @@ const FUEL_START = 100, FUEL_CAP = 150, FUEL_PER_PX = 0.12, FUEL_ROUND_REFILL = 
 const TIER_COLORS = ['#9aa5b1', '#5fd35f', '#2fd0c8', '#4aa8ff', '#7a6bff', '#c15bff', '#ff5fb0', '#ff9a3c', '#ffd54a', '#ffffff'];
 const SHIELD_NAMES = ['Základný', 'Zosilnený', 'Kompozitný', 'Reaktívny', 'Energetický', 'Plazmový', 'Kvantový', 'Fázový', 'Titánový', 'SUPER ŠTÍT'];
 const SHIELD_UNLOCK = [3, 4, 5, 6, 8, 10, 12, 14, 17, 20];   // potrebný level veliteľa (žiadny štít pred LV3, SUPER ŠTÍT až na maxLV)
-const WLV_UNLOCK = [2, 5, 8, 12, 16];   // potrebný level veliteľa na každú ďalšiu úroveň sily zbrane
+const WLV_UNLOCK = [2, 5, 8, 12, 16, 24, 40, 60];   // potrebný level veliteľa na každú ďalšiu úroveň sily zbrane (staršie zbrane)
+const wlvUnlockLevel = (id, lvl) => { const it = SHOP_ITEMS.find(i => i.id === id); return it && it.unlock >= 20 ? Math.min(100, it.unlock + 3 * lvl) : WLV_UNLOCK[lvl]; };   // nové zbrane (LV20+): každá ďalšia úroveň o 3 levely nad odomknutím zbrane
 const SHIELDS = SHIELD_NAMES.map((name, i) => ({
   lvl: i + 1, name, cap: 20 + 15 * i, cost: Math.round(60 * Math.pow(i + 1, 1.5) / 10) * 10, unlock: SHIELD_UNLOCK[i], color: TIER_COLORS[i],
 }));
@@ -132,6 +133,23 @@ const AMMO = {
   carpet:    { name: 'Koberec bômb',     icon: 'KB', speed: 640, dmg: 0,  splash: 0,   crater: 0,   color: '#ff3d3d', strike: 10, cap: 2 },
   nukeS:     { name: 'Malá atómovka',    icon: '☢1', speed: 560, dmg: 90, splash: 130, crater: 95,  color: '#fff27a', flash: 0.75, cap: 3 },
   nukeL:     { name: 'Veľká atómovka',   icon: '☢2', speed: 540, dmg: 150, splash: 210, crater: 150, color: '#ffffff', flash: 1, cap: 2 },
+  // zbrane odomykané vysokým levelom veliteľa (LV20+); zbrane na pozíciách dekád (20, 30, ... 100) sú "špeciály" - najsilnejšie z danej úrovne
+  titanShell:  { name: 'Titánova strela',     icon: 'TS', speed: 580, dmg: 85,  splash: 110, crater: 100, color: '#9ec3ff', cluster: 6,  cap: 2 },
+  plasmaLance: { name: 'Plazmová kopija',     icon: 'PK', speed: 760, dmg: 70,  splash: 55,  crater: 38,  color: '#7df9ff', cap: 6 },
+  thermite:    { name: 'Termitová bomba',     icon: 'TB', speed: 600, dmg: 40,  splash: 70,  crater: 60,  color: '#ff9a3c', volcano: 8, cap: 5 },
+  frostShell:  { name: 'Ľadová strela',       icon: 'ĽS', speed: 620, dmg: 45,  splash: 95,  crater: 40,  color: '#bff1ff', stun: true, cap: 4 },
+  stormBreaker:{ name: 'Búrkolam',            icon: 'BL', speed: 570, dmg: 120, splash: 150, crater: 110, color: '#8fb5ff', cluster: 10, cap: 2 },
+  kazeta:      { name: 'Kazetová bomba',      icon: 'KZ', speed: 600, dmg: 30,  splash: 40,  crater: 26,  color: '#ffd27a', cluster: 24, cap: 4 },
+  quakeDrill:  { name: 'Zemetrasný vrták',    icon: 'ZV', speed: 560, dmg: 60,  splash: 80,  crater: 175, color: '#b08a5a', cap: 3 },
+  hellfire:    { name: 'Peklo',               icon: 'PE', speed: 580, dmg: 80,  splash: 120, crater: 90,  color: '#ff5a2a', volcano: 28, cap: 2 },
+  orbital:     { name: 'Orbitálny úder',      icon: 'OU', speed: 640, dmg: 0,   splash: 0,   crater: 0,   color: '#ff6de0', strike: 14, cap: 2 },
+  tempest:     { name: 'Smršť',               icon: 'SM', speed: 640, dmg: 0,   splash: 0,   crater: 0,   color: '#74e0ff', apexSplit: 14, cap: 2 },
+  blackHole:   { name: 'Čierna diera',        icon: 'ČD', speed: 540, dmg: 90,  splash: 170, crater: 130, color: '#b06cff', stun: true, cap: 2 },
+  singularity: { name: 'Singularita',         icon: 'SG', speed: 540, dmg: 160, splash: 230, crater: 190, color: '#d9a7ff', stun: true, flash: 0.8, cap: 1 },
+  ragnarok:    { name: 'Ragnarok',            icon: 'RG', speed: 640, dmg: 0,   splash: 0,   crater: 0,   color: '#ff4d4d', strike: 20, cap: 1 },
+  annihilator: { name: 'Anihilátor',          icon: 'AH', speed: 520, dmg: 230, splash: 280, crater: 220, color: '#ffe066', flash: 1, cluster: 12, cap: 1 },
+  doomsday:    { name: 'Súdny deň',           icon: 'SD', speed: 520, dmg: 300, splash: 330, crater: 260, color: '#ff7a1f', flash: 1, volcano: 30, cap: 1 },
+  omega:       { name: 'Omega',               icon: 'Ω',  speed: 500, dmg: 450, splash: 420, crater: 320, color: '#ffffff', flash: 1.2, cap: 1 },
   // generálske dary z kampane (exkluzívne - nedajú sa kúpiť v obchode, dostaneš ich len za dokončenie planéty od jej generála)
   liberCannon: { name: 'Oslobodzovacie delo', icon: 'LD', speed: 640, dmg: 0,  splash: 0,  crater: 0,  color: '#ffd54a', strike: 8,  cap: 2 },
   gravBlast:   { name: 'Azimutov gravitačný náboj', icon: 'AG', speed: 600, dmg: 20, splash: 65, crater: 22, color: '#8cff7a', stun: true, cap: 3 },
@@ -148,12 +166,13 @@ const AMMO = {
   lava:      { name: 'Láva',     icon: '', speed: 1, dmg: 12, splash: 28, crater: 10, color: '#ff6a2a' },
   bomb:      { name: 'Bomba',    icon: '', speed: 1, dmg: 34, splash: 48, crater: 24, color: '#ff9d4a' },
 };
-const ORDER = ['ap', 'missile', 'he', 'bounce', 'ricochet', 'dirt', 'tele', 'repair', 'repairBig', 'laser', 'emp', 'empBig', 'pine', 'chain', 'shower', 'meteor', 'volcano', 'firestorm', 'airstrike', 'carpet', 'seismic', 'nukeS', 'nukeL', 'liberCannon', 'gravBlast', 'alienSwarm', 'alterStorm', 'mammothMine', 'lunarBolt', 'dustStorm', 'acidRain'];
+const ORDER = ['ap', 'missile', 'he', 'bounce', 'ricochet', 'dirt', 'tele', 'repair', 'repairBig', 'laser', 'emp', 'empBig', 'pine', 'chain', 'shower', 'meteor', 'volcano', 'firestorm', 'airstrike', 'carpet', 'seismic', 'nukeS', 'nukeL', 'titanShell', 'plasmaLance', 'thermite', 'frostShell', 'stormBreaker', 'kazeta', 'quakeDrill', 'hellfire', 'orbital', 'tempest', 'blackHole', 'singularity', 'ragnarok', 'annihilator', 'doomsday', 'omega', 'liberCannon', 'gravBlast', 'alienSwarm', 'alterStorm', 'mammothMine', 'lunarBolt', 'dustStorm', 'acidRain'];
 const capOf = id => AMMO[id].cap || 9;
 
 // ---------- úrovne zbraní (vylepšenie poškodenia za peniaze, kupuje sa v obchode) ----------
-const WLV_IDS = ['ap', 'missile', 'he', 'bounce', 'ricochet', 'emp', 'empBig', 'pine', 'chain', 'volcano', 'seismic', 'nukeS', 'nukeL', 'laser'];
-const WLV_MAX = 5, WLV_DMG_STEP = 0.18;
+const WLV_IDS = ['ap', 'missile', 'he', 'bounce', 'ricochet', 'emp', 'empBig', 'pine', 'chain', 'volcano', 'seismic', 'nukeS', 'nukeL', 'laser',
+  'titanShell', 'plasmaLance', 'thermite', 'frostShell', 'stormBreaker', 'kazeta', 'quakeDrill', 'hellfire', 'orbital', 'tempest', 'blackHole', 'singularity', 'ragnarok', 'annihilator', 'doomsday', 'omega'];
+const WLV_MAX = 8, WLV_DMG_STEP = 0.18;   // 8 úrovní vylepšenia zbrane (úrovne 6-8 sa odomykajú až na LV24 / LV40 / LV60)
 const wlvCost = lvl => Math.round((350 + 300 * lvl) / 10) * 10;
 const wlvOf = (t, id) => (t && t.wlv && t.wlv[id]) || 0;
 const dmgMul = (t, id) => (1 + WLV_DMG_STEP * wlvOf(t, id)) * (hasRelic(t, 'power') ? 1.15 : 1) * (1 + 0.02 * perkRank(t && t.nick ? getProfile(t.nick) : null, 'power'));
@@ -242,6 +261,23 @@ const SHOP_ITEMS = [
   { id: 'carpet',    label: 'Koberec bômb ×1',      desc: 'Po dopade zavolá 10 bômb z neba',              cost: 1600, qty: 1, kind: 'ammo', unlock: 17 },
   { id: 'nukeS',     label: 'Malá atómovka ×1',     desc: 'Obrovský výbuch, ničí terén aj budovy',        cost: 900,  qty: 1, kind: 'ammo', unlock: 9 },
   { id: 'nukeL',     label: 'Veľká atómovka ×1',    desc: 'Skoro celá mapa v plameňoch',                  cost: 2200, qty: 1, kind: 'ammo', unlock: 12 },
+  // zbrany od LV20 - "special: true" = špeciál na hranici dekády (20, 30, ... 100), vždy silnejší než predošlé
+  { id: 'titanShell',   label: 'Titánova strela ×1',   desc: 'Silný výbuch + 6 bômb navyše',                         cost: 3000,  qty: 1, kind: 'ammo', unlock: 20,  special: true },
+  { id: 'plasmaLance',  label: 'Plazmová kopija ×2',   desc: 'Veľmi rýchla, presná, priamy zásah bolí',              cost: 1500,  qty: 2, kind: 'ammo', unlock: 22 },
+  { id: 'thermite',     label: 'Termitová bomba ×2',   desc: 'Výbuch a fontána horiacej termitovej lávy',            cost: 1800,  qty: 2, kind: 'ammo', unlock: 25 },
+  { id: 'frostShell',   label: 'Ľadová strela ×2',     desc: 'Veľký dosah, ochromí súpera aj poškodí',               cost: 2000,  qty: 2, kind: 'ammo', unlock: 28 },
+  { id: 'stormBreaker', label: 'Búrkolam ×1',          desc: 'Ťažký výbuch a 10 striel navyše',                      cost: 4500,  qty: 1, kind: 'ammo', unlock: 30,  special: true },
+  { id: 'kazeta',       label: 'Kazetová bomba ×2',    desc: 'Rozpadne sa na 24 bômb - zaplaví celé okolie',         cost: 2400,  qty: 2, kind: 'ammo', unlock: 32 },
+  { id: 'quakeDrill',   label: 'Zemetrasný vrták ×1',  desc: 'Obrovský kráter - hrob pre tank, ktorý stojí pod ním', cost: 2800,  qty: 1, kind: 'ammo', unlock: 36 },
+  { id: 'hellfire',     label: 'Peklo ×1',             desc: 'Mohutný výbuch a 28 lávových bômb',                    cost: 6500,  qty: 1, kind: 'ammo', unlock: 40,  special: true },
+  { id: 'orbital',      label: 'Orbitálny úder ×1',    desc: 'Po dopade zavolá 14 bômb z orbity',                    cost: 4200,  qty: 1, kind: 'ammo', unlock: 44 },
+  { id: 'tempest',      label: 'Smršť ×1',             desc: 'V najvyššom bode sa rozdelí na 14 striel',             cost: 9000,  qty: 1, kind: 'ammo', unlock: 50,  special: true },
+  { id: 'blackHole',    label: 'Čierna diera ×1',      desc: 'Obrovský kráter, ochromí všetko v dosahu',             cost: 6000,  qty: 1, kind: 'ammo', unlock: 55 },
+  { id: 'singularity',  label: 'Singularita ×1',       desc: 'Ničivý výbuch s ochromením, rozpráši terén',           cost: 12000, qty: 1, kind: 'ammo', unlock: 60,  special: true },
+  { id: 'ragnarok',     label: 'Ragnarok ×1',          desc: 'Po dopade zavolá 20 bômb z neba',                      cost: 16000, qty: 1, kind: 'ammo', unlock: 70,  special: true },
+  { id: 'annihilator',  label: 'Anihilátor ×1',        desc: 'Atómový výbuch a 12 bômb navyše',                      cost: 22000, qty: 1, kind: 'ammo', unlock: 80,  special: true },
+  { id: 'doomsday',     label: 'Súdny deň ×1',         desc: 'Obrovský výbuch a 30 lávových bômb',                   cost: 30000, qty: 1, kind: 'ammo', unlock: 90,  special: true },
+  { id: 'omega',        label: 'Omega ×1',             desc: 'Najsilnejšia zbraň - zničí takmer všetko',             cost: 45000, qty: 1, kind: 'ammo', unlock: 100, special: true },
   { id: 'fuel',   label: 'Palivo +' + FUEL_BUY, desc: 'Doplní nádrž (jazda spotrebúva palivo)', cost: FUEL_BUY_COST, kind: 'fuel' },
   { id: 'tank',   label: 'Väčšia nádrž', desc: '+50 kapacity paliva (max 4)', kind: 'up', lvlKey: 'fuelLvl', max: 4, costFn: l => 200 + 150 * l },
   { id: 'speed',  label: 'Pásy a motor', desc: '+20 % rýchlosť, lepšie stúpanie (max 3)', kind: 'up', lvlKey: 'speedLvl', max: 3, costFn: l => 300 + 200 * l },
@@ -1850,6 +1886,8 @@ function addXp(t, n) {
     (t.rep.levels = t.rep.levels || []).push(t.level);
     if (t.tot) t.tot.levels.push(t.level);
     floatText(t.x, t.y - 70, 'LEVEL ' + t.level + '!', '#ffd54a');
+    const newW = SHOP_ITEMS.filter(i => i.kind === 'ammo' && i.unlock === t.level && t.level >= 20);
+    if (t.nick && newW.length) setTimeout(() => banner('🔓 Nová zbraň v obchode: ' + newW.map(i => AMMO[i.id].name).join(', ') + (newW.some(i => i.special) ? ' ⭐ špeciál!' : ''), 3200), 1500);
     if (t.nick && t.level % 5 === 0) setTimeout(() => banner('🎖️ Nová hodnosť: ' + rankName(t.level) + ' (LV ' + t.level + ')', 2800), 600);
     tone(500, 1400, 0.4, 'triangle', 0.08);
   }
@@ -2363,7 +2401,7 @@ function botShop(t) {
   if (t.armorLvl < 6 && t.money >= 150 + 120 * t.armorLvl + 400) { t.money -= 150 + 120 * t.armorLvl; t.armorLvl++; }
   WLV_IDS.forEach(id => {
     const lvl = wlvOf(t, id), cost = wlvCost(lvl);
-    if (lvl < WLV_MAX && t.level >= WLV_UNLOCK[lvl] && t.money >= cost + 200 && Math.random() < 0.3) { t.money -= cost; t.wlv = t.wlv || {}; t.wlv[id] = lvl + 1; }
+    if (lvl < WLV_MAX && t.level >= wlvUnlockLevel(id, lvl) && t.money >= cost + 200 && Math.random() < 0.3) { t.money -= cost; t.wlv = t.wlv || {}; t.wlv[id] = lvl + 1; }
   });
 }
 function tryFire(p) { if (tanks[p] && !tanks[p].bot) fire(tanks[p]); }
@@ -3685,7 +3723,7 @@ function shopRows(t) {
       if (!(t.ammo[k] > 0)) return null;
       return { id: k, ic: icon(a.icon, a.color), name: a.name, sub: (typeof BOSS_WEAPONS !== 'undefined' && BOSS_WEAPONS.has(k) ? 'Lup z bossa' : 'Dar generála') + ' – nedá sa kúpiť', price: 0, pack: '–', owned: t.ammo[k], fixed: true };
     }
-    return { id: k, ic: icon(a.icon, a.color), name: a.name, sub: it.desc, price: it.cost, pack: it.qty, owned: t.ammo[k], off: t.ammo[k] >= capOf(k), lock: it.unlock && t.level < it.unlock ? it.unlock : 0 };
+    return { id: k, ic: icon(a.icon, a.color), name: a.name, sub: (it.special ? '⭐ ŠPECIÁL · ' : '') + it.desc, special: !!it.special, price: it.cost, pack: it.qty, owned: t.ammo[k], off: t.ammo[k] >= capOf(k), lock: it.unlock && t.level < it.unlock ? it.unlock : 0 };
   }).filter(Boolean);
   const gear = SHOP_ITEMS.filter(i => i.kind !== 'ammo').map(it => {
     const st = itemState(t, it);
@@ -3699,16 +3737,16 @@ function shopRows(t) {
     id: 'sh' + sh.lvl, ic: ringIcon(sh.lvl), name: 'L' + sh.lvl + ' ' + sh.name, sub: '+' + sh.cap + ' ochrany' + (next === sh.lvl ? ' · ▶ nasadí sa v ďalšom kole' : ''),
     price: sh.cost, pack: 1, owned: t.shields[sh.lvl - 1], off: t.shields[sh.lvl - 1] >= SHIELD_CAP, lock: t.level < sh.unlock ? sh.unlock : 0, next: next === sh.lvl,
   }));
-  const wlevels = WLV_IDS.map(id => {
+  const wlevels = WLV_IDS.filter(id => { const it = SHOP_ITEMS.find(i => i.id === id); return !(it && it.unlock >= 20 && t.level < it.unlock); }).map(id => {   // vylepšenia nových zbraní sa ukážu až po ich odomknutí
     const a = AMMO[id], lvl = wlvOf(t, id);
     return { id: 'wl_' + id, ic: icon(a.icon, a.color), name: 'LV zbrane: ' + a.name, sub: '+' + Math.round(WLV_DMG_STEP * 100) + ' % poškodenia/úroveň (teraz +' + Math.round(WLV_DMG_STEP * 100 * lvl) + ' %)',
-      price: wlvCost(lvl), pack: 1, owned: lvl, ownedMax: WLV_MAX, off: lvl >= WLV_MAX, lock: lvl < WLV_MAX && t.level < WLV_UNLOCK[lvl] ? WLV_UNLOCK[lvl] : 0 };
+      price: wlvCost(lvl), pack: 1, owned: lvl, ownedMax: WLV_MAX, off: lvl >= WLV_MAX, lock: lvl < WLV_MAX && t.level < wlvUnlockLevel(id, lvl) ? wlvUnlockLevel(id, lvl) : 0 };
   });
   return { weapons, gear, shields, wlevels };
 }
 function rowHtml(t, r) {
   const afford = t.money >= r.price, dis = r.fixed || r.off || r.lock || !afford;
-  return '<div class="ri' + (dis ? ' dis' : '') + (r.fixed ? ' fixed' : '') + (r.next ? ' next' : '') + (!afford && !r.off && !r.fixed && !r.lock ? ' poor' : '') + '"' +
+  return '<div class="ri' + (dis ? ' dis' : '') + (r.fixed ? ' fixed' : '') + (r.special ? ' special' : '') + (r.next ? ' next' : '') + (!afford && !r.off && !r.fixed && !r.lock ? ' poor' : '') + '"' +
     (dis ? '' : ' data-p="' + t.id + '" data-buy="' + r.id + '"') + '>' + r.ic +
     '<span class="nm">' + r.name + (r.lock ? ' 🔒 LV' + r.lock : '') + '<small>' + r.sub + '</small></span>' +
     '<span class="c">' + (r.price ? '€' + r.price : '0') + '</span><span class="c">' + r.pack + '</span>' +
@@ -3743,7 +3781,7 @@ function buy(p, id) {
   if (t.bot) return;
   if (id.startsWith('wl_')) {
     const wid = id.slice(3), lvl = wlvOf(t, wid), cost = wlvCost(lvl);
-    if (lvl >= WLV_MAX || t.level < WLV_UNLOCK[lvl] || t.money < cost) return;
+    if (lvl >= WLV_MAX || t.level < wlvUnlockLevel(id, lvl) || t.money < cost) return;
     t.money -= cost; t.wlv = t.wlv || {}; t.wlv[wid] = lvl + 1;
     tone(700 + lvl * 90, 1100 + lvl * 100, 0.1, 'triangle', 0.07);
     renderShop(); return;
