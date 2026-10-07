@@ -3685,19 +3685,27 @@ syncViewportVars();
 if (window.visualViewport) ['resize', 'scroll'].forEach(ev => window.visualViewport.addEventListener(ev, syncViewportVars));
 const FIT_IDS = ['login', 'home', 'dungeon', 'settings', 'credits'];
 function fitMenus() {   // automaticky prispôsobí karty menu oknu: ak sú vyššie/širšie ako okno, zmenší ich (bez posúvania), na veľkom okne ich mierne zväčší
-  const vw = window.innerWidth;
+  // škáluje sa cez transform (CSS zoom niektoré mobilné prehliadače ignorujú); po škálovaní sa okraje dopočítajú, nech je karta vycentrovaná a nič neprečnieva
+  const vw = window.innerWidth; let lastZ = 1, lastAvail = 0;
   FIT_IDS.forEach(id => {
     const ov = $(id); if (!ov || !ov.classList.contains('show')) return;
     const card = ov.querySelector('.card'); if (!card) return;
-    card.style.zoom = '';
+    card.style.transform = ''; card.style.margin = ''; card.style.transformOrigin = '';
     syncViewportVars();
     const cs = getComputedStyle(ov), avail = ov.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);   // výška overlayu = --app-h (viditeľná plocha)
-    const need = card.offsetHeight + 56, w = card.offsetWidth || 1;   // 46 px rezerva na okraje a nápis verzie
+    const h = card.offsetHeight, w = card.offsetWidth || 1, need = h + 56;   // 56 px rezerva na okraje a nápis verzie
     let z = Math.min(avail / need, (vw - 16) / w, vw > 820 ? 1.25 : 1);
     z = Math.max(0.5, z); if (z > 0.97 && z < 1.04) z = 1;
-    if (z !== 1) card.style.zoom = z.toFixed(3);
-    if (card.offsetHeight * (z || 1) + 8 <= avail) ov.scrollTop = 0;   // všetko sa zmestilo - nech nezostane odrolované z minula
+    if (z !== 1) {
+      card.style.animation = 'none';   // animácia vstupu by prebila inline transform
+      card.style.transformOrigin = 'top center'; card.style.transform = 'scale(' + z.toFixed(3) + ')';
+      card.style.margin = Math.max(0, (avail - h * z) / 2).toFixed(1) + 'px auto ' + (-(h * (1 - z))).toFixed(1) + 'px';
+    }
+    if (h * z + 8 <= avail) ov.scrollTop = 0;   // všetko sa zmestilo - nech nezostane odrolované z minula
+    lastZ = z; lastAvail = avail;
   });
+  const diag = ' · ' + vw + '×' + Math.round(window.innerHeight) + '/' + (document.documentElement.style.getPropertyValue('--app-h') || '?').replace('px', '') + (lastZ !== 1 ? ' · ×' + lastZ.toFixed(2) : '');
+  document.querySelectorAll('.verTag').forEach(el => { el.dataset.diag = diag; });   // rozmery okna v nápise verzie - pomôžu pri ladení na rôznych telefónoch
 }
 let fitT = 0; const fitSoon = () => { clearTimeout(fitT); fitT = setTimeout(fitMenus, 40); };
 addEventListener('resize', fitSoon); addEventListener('orientationchange', () => setTimeout(fitMenus, 300));

@@ -1,7 +1,7 @@
 // Iron Duel: Tank Commanders - service worker (umožňuje "Pridať na plochu" a hranie bez pripojenia)
 // POZOR: SW_VERSION treba zvýšiť pri KAŽDEJ zmene game.js/index.html (rovnako ako game.js?v=N v index.html),
 // inak by hráčom na telefóne mohla zostať navždy uložená stará verzia hry v cache.
-const SW_VERSION = 'v56';
+const SW_VERSION = 'v57';
 const CACHE_NAME = 'iron-duel-' + SW_VERSION;
 const SHELL = [
   './',
