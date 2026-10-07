@@ -2056,6 +2056,8 @@ function buildCampaignBoss(c, startId) {
   t.money = 900 + 400 * L + c.baseFloor * 40; t.armorLvl = Math.min(8, 3 + Math.floor(c.baseFloor / 4) + L); botShop(t);
   makeBoss(t, B.kind);
   t.boss.ability = B.ability; t.boss.level = L; t.boss.hpMul *= 1 + 0.45 * (L - 1); t.boss.dmgMul *= 1 + 0.12 * (L - 1);
+  const f = 1 + 0.07 * (L - 1);   // vyššia úroveň = väčší boss (trup, zásahová zóna aj rozstup trojice rastú spolu)
+  t.k *= f; t.artPivotH *= f; for (const key of ['s', 'hw', 'hh', 'gap']) if (t.boss[key]) t.boss[key] *= f;
   return [t];
 }
 function bossAbilityTurn(t) {   // schopnosť unikátneho bossa na začiatku jeho ťahu; sila rastie s úrovňou bossa
@@ -2772,6 +2774,13 @@ function updateTank(t, dt) {
       t.x = nx;
     } else t.vx = 0;
   }
+  if (t.boss && t.boss.ability && quality > 0 && Math.random() < dt * 22) {   // častice schopnosti bossa: piesok, kyselinové iskry, fázové iskry
+    const B = t.boss, ab = B.ability, px = t.x + rand(-B.hw, B.hw), py = t.y - rand(4, B.hh);
+    if (ab === 'sandstorm') spark(px, py, wind * 0.8 + rand(-25, 25), rand(-30, 10), 'rgba(205,165,100,.55)', 1.1, rand(5, 11), 0);
+    else if (ab === 'inferno') spark(px, py, rand(-10, 10), rand(-70, -30), '#9dff3a', rand(0.5, 1), rand(2, 4), -20, 'glow');
+    else if (ab === 'blink') spark(px, py, rand(-30, 30), rand(-50, 10), '#7fe9ff', rand(0.4, 0.8), rand(2, 4), 0, 'glow');
+    else if (ab === 'bulwark' && t.shield > 0) spark(px, py, rand(-20, 20), rand(-40, 0), '#7ab8ff', rand(0.4, 0.7), rand(2, 3), 0, 'glow');
+  }
   t.recoil = Math.max(0, (t.recoil || 0) - dt * 4);
   if (quality > 0 && t.hp < maxHp(t) * 0.35 && Math.random() < dt * 6) spark(t.x + rand(-8, 8), t.y - 28, rand(-10, 10), rand(-50, -25), t.hp < maxHp(t) * 0.18 ? 'rgba(30,30,30,.7)' : 'rgba(90,90,90,.6)', 1.2, rand(5, 9), -15);
   // pripnutie k terénu
@@ -3291,6 +3300,47 @@ function drawBossArmor(t) {   // pancierové "mosty" medzi trupmi trojitého bos
     ctx.fillStyle = 'rgba(255,90,60,' + (pulse * 0.25) + ')'; ctx.beginPath(); ctx.arc(-h * 0.5, -h * 0.5, 18, 0, 6.3); ctx.fill();
   }
 }
+const BOSS_FX = { bulwark: '#7ab8ff', blink: '#7fe9ff', sandstorm: '#e0b070', inferno: '#9dff3a' };
+function drawBossAccessories(t) {   // doplnky unikátnych bossov planét - kreslia sa v lokálnych súradniciach trupu (rovnako ako drawBossArmor)
+  const B = t.boss, ab = B && B.ability; if (!ab || t.dead) return;
+  const h = t.artPivotH || 40, k = t.k || 1, L = B.level || 1, col = BOSS_FX[ab], ph = time * (2 + L);
+  ctx.save(); ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(0,0,0,.65)';
+  for (const off of bossBarrelsAll(t)) {
+    if (bossWreck(t, off)) continue;
+    if (ab === 'bulwark') {   // bočné pancierové sukne s nitmi + čelný baranidlový klin
+      ctx.fillStyle = '#5b6678'; ctx.fillRect(off - 52 * k, -h * 0.34, 104 * k, h * 0.3); ctx.strokeRect(off - 52 * k, -h * 0.34, 104 * k, h * 0.3);
+      ctx.fillStyle = '#8a95a8'; for (let i = 0; i < 4 + L; i++) { ctx.beginPath(); ctx.arc(off - 44 * k + i * (88 * k / (3 + L)), -h * 0.19, 2 * k, 0, 6.3); ctx.fill(); }
+      ctx.fillStyle = '#aab4c4'; ctx.beginPath(); ctx.moveTo(off + 54 * k, -h * 0.5); ctx.lineTo(off + 82 * k, -h * 0.1); ctx.lineTo(off + 54 * k, -h * 0.1); ctx.closePath(); ctx.fill(); ctx.stroke();
+    } else if (ab === 'sandstorm') {   // rotujúci ventilátor na veži + výfuky
+      ctx.fillStyle = '#3a342a'; ctx.fillRect(off - 38 * k, -h * 1.02, 6 * k, h * 0.3); ctx.fillRect(off - 28 * k, -h * 1.0, 5 * k, h * 0.26);
+      ctx.translate(off + 28 * k, -h * 1.08);
+      for (let i = 0; i < 3; i++) { ctx.save(); ctx.rotate(ph + i * 2.094); ctx.fillStyle = col; ctx.globalAlpha = 0.85; ctx.beginPath(); ctx.ellipse(10 * k, 0, 11 * k, 3.2 * k, 0, 0, 6.3); ctx.fill(); ctx.restore(); }
+      ctx.fillStyle = '#2a2418'; ctx.beginPath(); ctx.arc(0, 0, 3.4 * k, 0, 6.3); ctx.fill(); ctx.translate(-(off + 28 * k), h * 1.08);
+    } else if (ab === 'blink') {   // plávajúca energetická guľa nad trupom
+      const y = -h * 1.5 - Math.sin(ph) * 4 * k, g = ctx.createRadialGradient(off, y, 1, off, y, 16 * k);
+      g.addColorStop(0, 'rgba(255,255,255,.95)'); g.addColorStop(0.35, col); g.addColorStop(1, 'rgba(127,233,255,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(off, y, 16 * k, 0, 6.3); ctx.fill();
+      ctx.strokeStyle = 'rgba(127,233,255,.6)'; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(off, y + 12 * k); ctx.lineTo(off, -h * 1.05); ctx.stroke(); ctx.setLineDash([]);
+    } else if (ab === 'inferno') {   // nádrže s kyselinou, žiaria a kvapkajú
+      ctx.fillStyle = '#243018'; ctx.beginPath(); ctx.ellipse(off - 22 * k, -h * 1.0, 20 * k, 9 * k, 0, 0, 6.3); ctx.fill(); ctx.stroke();
+      const gl = 0.55 + 0.3 * Math.sin(ph * 1.5); ctx.fillStyle = 'rgba(157,255,58,' + gl + ')'; ctx.beginPath(); ctx.ellipse(off - 22 * k, -h * 1.02, 15 * k, 5 * k, 0, 0, 6.3); ctx.fill();
+      ctx.fillStyle = 'rgba(157,255,58,.9)'; const dy = ((time * 30 + off) % 24); ctx.beginPath(); ctx.arc(off - 10 * k, -h * 0.9 + dy, 2.2 * k, 0, 6.3); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+function drawBossAura(t) {   // žiara/aura okolo bossa podľa jeho schopnosti (svetový priestor)
+  const B = t.boss, ab = B && B.ability; if (!ab || t.dead) return;
+  const col = BOSS_FX[ab], cx = t.x, cy = t.y - B.hh * 0.55, r = B.hw * 1.15, p = 0.5 + 0.5 * Math.sin(time * 3);
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createRadialGradient(cx, cy, r * 0.2, cx, cy, r); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.7, col + '00'); g.addColorStop(1, col + '55');
+  ctx.globalAlpha = 0.25 + 0.2 * p; ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(cx, cy, r, r * 0.6, 0, 0, 6.3); ctx.fill();
+  ctx.restore();
+  if (ab === 'bulwark' && t.shield > 0) {   // šesťuholníková bariéra, kým drží štít
+    ctx.save(); ctx.strokeStyle = col; ctx.globalAlpha = 0.4 + 0.3 * p; ctx.lineWidth = 2; ctx.setLineDash([10, 6]); ctx.lineDashOffset = -time * 20;
+    ctx.beginPath(); for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3 + 0.5; const x = cx + Math.cos(a) * r * 0.95, y = cy + Math.sin(a) * r * 0.62; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } ctx.closePath(); ctx.stroke(); ctx.restore();
+  }
+}
 function drawBossBar(t) {
   const B = t.boss, mh = maxHp(t), w = Math.max(160, B.hw * 1.5), x = t.x - w / 2, y = t.y - B.hh - 26 * (t.k > 1 ? 1.5 : 1);
   ctx.save(); ctx.textAlign = 'center';
@@ -3299,6 +3349,7 @@ function drawBossBar(t) {
   const hw = w * clamp(t.hp / mh, 0, 1); if (hw > 1) { roundRect(x, y, hw, 10, 5); ctx.fill(); }
   ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 1; roundRect(x, y, w, 10, 5); ctx.stroke();
   ctx.font = 'bold 12px system-ui'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.85)';
+  if (B.level) { ctx.font = 'bold 15px system-ui'; ctx.fillStyle = B.level >= 3 ? '#ffd54a' : B.level === 2 ? '#d8dee9' : '#c28b55'; ctx.fillText('★'.repeat(B.level), t.x, y - 24); ctx.font = 'bold 12px system-ui'; }
   ctx.strokeText(t.name + ' · ' + Math.ceil(t.hp) + ' / ' + mh, t.x, y - 7); ctx.fillStyle = '#fff'; ctx.fillText(t.name + ' · ' + Math.ceil(t.hp) + ' / ' + mh, t.x, y - 7);
   ctx.restore();
 }
@@ -3330,6 +3381,7 @@ function drawTank(t) {
     ctx.restore();
   });
   if (B && !B.gap) drawBossArmor(t);   // bodce obra idú NAD trup
+  if (B && B.ability) drawBossAccessories(t);
   ctx.restore();
   if (dead) return;
   const a = t.ang * Math.PI / 180, ux = Math.cos(a), uy = -Math.sin(a), rc = (t.recoil || 0) * 7 * k, L = 36 * k;
@@ -3361,7 +3413,7 @@ function drawTank(t) {
     ctx.globalAlpha = 1;
   }
   if (B) {
-    drawBossBar(t);
+    drawBossAura(t); drawBossBar(t);
     const wp = bossWeakPoint(t);
     if (wp) { ctx.strokeStyle = 'rgba(255,213,74,' + (0.45 + 0.35 * Math.sin(time * 6)) + ')'; ctx.lineWidth = 2; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.arc(wp.x, wp.y, 28, 0, 6.3); ctx.stroke(); ctx.setLineDash([]); }
     if (B.gap && quality > 0) bossBarrelsAll(t).forEach(off => { if (bossWreck(t, off) && Math.random() < 0.25) spark(t.x + off + rand(-30, 30), t.y - 40, rand(-10, 10), rand(-60, -30), 'rgba(40,40,40,.7)', 1.2, rand(6, 11), -15); });
