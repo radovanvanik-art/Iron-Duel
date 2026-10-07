@@ -436,7 +436,11 @@ async function enterCloudSession(user) {   // zavolá sa po úspešnom Google pr
     if (prevP && prevP.weekly) profiles[key].weekly = prevP.weekly;
     if (prevP && prevP.dungeonMods) profiles[key].dungeonMods = prevP.dungeonMods;   // počítadlá odznakov Dungeonu a priepasti sú len lokálne
     if (prevP && prevP.abyss) profiles[key].abyss = prevP.abyss;
-    if (prevP && prevP.dungeon && (!profiles[key].dungeon || prevP.dungeon.best > profiles[key].dungeon.best)) profiles[key].dungeon = prevP.dungeon;   // postup v Dungeone: platí lepší z cloudu a lokálneho
+    if (prevP && prevP.dungeon) {   // postup v Dungeone: platí lepší z cloudu a lokálneho; relikvie a čakajúci výber sú len lokálne, nesmú sa stratiť
+      const cd = profiles[key].dungeon;
+      if (!cd || prevP.dungeon.best >= cd.best) profiles[key].dungeon = prevP.dungeon;
+      else profiles[key].dungeon = Object.assign({}, cd, { relics: prevP.dungeon.relics || [], pending: prevP.dungeon.pending || null });
+    }
     cloudUser = { id: user.id, nick: row.nick };
   }
   setup.players[0].nick = row.nick; setup.players[0].name = row.nick;
@@ -1001,7 +1005,8 @@ function refreshDungeonProgressSource() {
   dungeon.progress = nick ? dungeonProgressForNick(nick) : (loadLegacyGlobalDungeonProgress() || defaultDungeonProgress());
 }
 function saveDungeonProgress() {
-  if (setup.players[0].nick) { saveProfiles(); return; }   // dungeon.progress JE priamo profiles[key].dungeon
+  const p = setup.players[0].nick ? getProfile(setup.players[0].nick) : null;
+  if (p) { p.dungeon = dungeon.progress; saveProfiles(); return; }   // postup sa vždy priradí k profilu aktuálneho hráča (aj keby dungeon.progress medzitým nebol jeho objektom)
   try { localStorage.setItem(DUNGEON_KEY, JSON.stringify(dungeon.progress)); } catch (_) {}
 }
 let story = { active: false, idx: null, progress: null };
@@ -1461,7 +1466,7 @@ function renderStoryList() {
 $('homeStoryBtn').addEventListener('click', () => { hide('home'); focusFrontierWorld(); renderStoryList(); show('story'); });
 $('storyClose').addEventListener('click', () => { stopGlobeLoop(); hide('story'); show('home'); });
 document.addEventListener('click', e => { if (e.target.closest('.btn,.panelBtn,.dashBtn,.worldTab,.relicCard,.radarBtn,.swb')) tone(520, 340, 0.05, 'square', 0.03); });   // jemné kovové "cvaknutie" pri klikoch v menu (len ak už beží zvuk)
-$('homeDungeonBtn').addEventListener('click', () => { hide('home'); renderDungeonScreen(); show('dungeon'); });
+$('homeDungeonBtn').addEventListener('click', () => { hide('home'); refreshDungeonProgressSource(); renderDungeonScreen(); show('dungeon'); });
 $('dungeonClose').addEventListener('click', () => { hide('dungeon'); show('home'); });
 $('dungeonEnterBtn').addEventListener('click', () => startDungeon());
 for (const id of ['endRelics', 'dungeonRelics']) $(id).addEventListener('click', e => { const c = e.target.closest('[data-relic]'); if (c) pickRelic(c.dataset.relic); });
@@ -2038,6 +2043,7 @@ function dungeonEnterFloor() {
 function startDungeon() {   // čerstvý vstup do Dungeonu (z domovskej obrazovky) - tu sa tank hráča vytvára nanovo so štartovacou výzbrojou
   story.active = false; story.idx = null; document.body.classList.remove('storymode');
   goFullscreen(); initAudio(); fixColors(); saveSetup();
+  refreshDungeonProgressSource();   // postup musí patriť práve prihlásenému hráčovi (nie starému objektu z čias pred prihlásením)
   setup.terrain = 'dungeon'; WIN_ROUNDS = 1; applyMapSize('normal');
   dungeon.active = true; document.body.classList.add('dungeonmode');
   // Dungeon je zatiaľ sólový režim (1 hráč proti botom) - nepreberá počet hráčov z nastavenia rýchleho zápasu (to by mohlo
@@ -3900,6 +3906,7 @@ function loginSlot(i, text) {
   if (!act.some((q, j) => j !== i && q.color.toLowerCase() === p.color.toLowerCase())) slot.color = p.color;
   else p.color = slot.color;
   saveProfiles(); saveSetup();
+  if (i === 0) refreshStoryProgressSource();   // kampaň aj Dungeon patria hráčovi v slote 0 - po prihlásení ich treba prepojiť s jeho profilom
   slotMsg[i] = created ? 'Nový profil vytvorený – vitaj, ' + p.nick + '!' : 'Vitaj späť, ' + p.nick + '!';
   renderSetup();
 }
