@@ -3702,10 +3702,19 @@ function renderHome() {
     } else importBtn.style.display = 'none';
   } else importBtn.style.display = 'none';
 }
+function tankArtNameFor(color) {   // názov obrázka tanku pre ľubovoľnú farbu - ak nie je medzi pripravenými, vezme sa najbližšia podľa RGB (napr. predvolená farba z Google účtu)
+  const key = String(color).toLowerCase();
+  if (TANK_COLOR_NAME[key]) return TANK_COLOR_NAME[key];
+  if (!isColor(key)) return null;
+  const rgb = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
+  const [r, g, b] = rgb(key); let best = null, bd = 1e9;
+  for (const hex in TANK_COLOR_NAME) { const [r2, g2, b2] = rgb(hex), d = (r - r2) ** 2 + (g - g2) ** 2 + (b - b2) ** 2; if (d < bd) { bd = d; best = TANK_COLOR_NAME[hex]; } }
+  return best;
+}
 const RANK_NAMES = ['Rekrút', 'Vojak', 'Desiatnik', 'Seržant', 'Poručík', 'Kapitán', 'Major', 'Plukovník', 'Generál', 'Maršal'];
 function renderHomeProfile(nick, prof) {   // herná karta veliteľa (avatar tanku, hodnosť, XP) + živé podnadpisy dlaždíc a odznaky na doku
   const lvl = prof ? (prof.level || 1) : 1, color = prof && isColor(prof.color) ? prof.color : (setup.players[0].color || PALETTE[0]);
-  const art = TANK_COLOR_NAME[String(color).toLowerCase()], need = xpToNext(lvl), xp = prof ? (prof.xp || 0) : 0, maxed = lvl >= MAX_LEVEL;
+  const art = tankArtNameFor(color), need = xpToNext(lvl), xp = prof ? (prof.xp || 0) : 0, maxed = lvl >= MAX_LEVEL;
   const pct = maxed ? 100 : Math.min(100, Math.round(100 * xp / need));
   $('homeProfile').style.setProperty('--pc', color);
   $('homeProfile').innerHTML = '<div class="hAvatar" style="--pc:' + color + '">' + (art ? '<img src="assets/tanks/tank_hull_' + art + '.png" alt="" draggable="false">' : '<i style="width:40px;height:20px;border-radius:6px;background:' + color + '"></i>') + '<span class="hLv">LV ' + lvl + '</span></div>' +
