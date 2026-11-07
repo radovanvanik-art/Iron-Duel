@@ -4054,8 +4054,17 @@ function renderHomeWeekly(prof) {
   card.innerHTML = '<div>' + wc.icon + ' <b>Týždenná výzva:</b> ' + esc(wc.title) + (done ? ' ✔' : ' (' + Math.min(have, wc.target) + '/' + wc.target + ')') + (done ? '' : ' · +' + wc.xp + ' XP') + '</div>' +
     '<div class="dcBar"><div class="dcFill" style="width:' + pct + '%"></div></div>';
 }
-$('googleLoginBtn').addEventListener('click', () => {
+$('googleLoginBtn').addEventListener('click', async () => {
   if (!sb) { loginError = 'Prihlásenie cez Google momentálne nie je dostupné (skontroluj internetové pripojenie).'; renderLogin(); return; }
+  loginError = 'Pripájam sa na prihlasovací server…'; renderLogin();
+  // predtým než prehliadač presmerujeme na server Supabase, over, že je vôbec dostupný - inak by sa zobrazila chyba prehliadača (ERR_NAME_NOT_RESOLVED), z ktorej sa v hre nedá vrátiť
+  try {
+    const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 6000);
+    await fetch(SUPABASE_URL + '/auth/v1/health', { mode: 'no-cors', cache: 'no-store', signal: ctl.signal }); clearTimeout(tm);
+  } catch (_) {
+    loginError = 'Prihlasovací server (Supabase) je nedostupný. Skontroluj internet; ak je tvoj projekt na Supabase pozastavený (po dlhšej nečinnosti), treba ho v jeho paneli obnoviť. Medzitým môžeš hrať ako hosť.';
+    renderLogin(); return;
+  }
   loginError = ''; renderLogin();
   sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin + window.location.pathname } })
     .then(({ error }) => { if (error) { loginError = 'Prihlásenie zlyhalo: ' + error.message; renderLogin(); } });
