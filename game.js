@@ -466,6 +466,16 @@ function findMigratableLocalProfile(excludeKey) {   // nájde lokálny (hosťovs
   }
   return best;
 }
+// offline hranie: ak má lokálny profil viac odohraných zápasov (alebo rovnako a viac XP) ako cloud, bol offline hrou novší a nesmie sa prepísať starším cloudovým riadkom
+const localIsNewer = (p, row) => (p.matches || 0) > (row.matches || 0) || ((p.matches || 0) === (row.matches || 0) && ((p.bestLevel || 1) > (row.best_level || 1) || ((p.level || 1) === (row.level || 1) && (p.xp || 0) > (row.xp || 0))));
+function mergeLocalNewer(cloud, local) {
+  const m = Object.assign({}, cloud);
+  for (const k of ['matches', 'wins', 'rounds', 'kills', 'bestLevel', 'level', 'xp', 'last', 'storyLoadout', 'story']) if (local[k] != null) m[k] = local[k];
+  m.achievements = Array.from(new Set([].concat(cloud.achievements || [], local.achievements || [])));
+  const lp = perkPointsSpent(local), cp = perkPointsSpent(cloud); if (lp >= cp && local.perks) m.perks = local.perks;
+  if (isColor(local.color)) m.color = local.color;
+  return m;
+}
 async function enterCloudSession(user) {   // zavolá sa po úspešnom Google prihlásení (aj pri obnovení už prihlásenej relácie)
   const row = await cloudFetchProfile(user.id);
   if (!row) return false;   // DB riadok ešte nevznikol (trigger beží tesne po registrácii) - skús znova nabudúce
@@ -479,7 +489,8 @@ async function enterCloudSession(user) {   // zavolá sa po úspešnom Google pr
     cloudPush();
   } else {
     const prevP = profiles[key];   // denná/týždenná výzva sa do cloudu neukladá (nemá tam stĺpec) - zachovaj ju z lokálneho uloženia, inak by sa pri každom obnovení relácie vynulovala
-    profiles[key] = cloudProfileRowToLocal(row);
+    const localNewer = !!prevP && localIsNewer(prevP, row);   // hralo sa offline (cloud bol nedostupný) - lokálny postup je novší než cloudový
+    profiles[key] = localNewer ? mergeLocalNewer(cloudProfileRowToLocal(row), prevP) : cloudProfileRowToLocal(row);
     if (prevP && prevP.daily) profiles[key].daily = prevP.daily;
     if (prevP && prevP.weekly) profiles[key].weekly = prevP.weekly;
     if (prevP && prevP.dungeonMods) profiles[key].dungeonMods = prevP.dungeonMods;   // počítadlá odznakov Dungeonu a priepasti sú len lokálne
@@ -491,6 +502,7 @@ async function enterCloudSession(user) {   // zavolá sa po úspešnom Google pr
       else profiles[key].dungeon = Object.assign({}, cd, { relics: prevP.dungeon.relics || [], pending: prevP.dungeon.pending || null });
     }
     cloudUser = { id: user.id, nick: row.nick };
+    if (localNewer) cloudPush();   // novší lokálny postup sa zapíše späť do cloudu
   }
   setup.players[0].nick = row.nick; setup.players[0].name = row.nick;
   if (isColor(profiles[key].color)) setup.players[0].color = profiles[key].color;
@@ -3946,7 +3958,21 @@ $('settingsBackBtn').addEventListener('click', () => { hide('settings'); show('h
 $('creditsBackBtn').addEventListener('click', () => { hide('credits'); show('home'); });
 
 // ---------- prihlásenie cez Google (Supabase Auth) alebo hosťovský vstup bez účtu, a domovská obrazovka ----------
-function renderLogin() { $('loginMsg').textContent = loginError || ''; }
+const pickOfflineProfile = () => { const c = Object.values(profiles).filter(p => p && p.nick && (p.matches > 0 || (p.level || 1) > 1)).sort((a, b) => (b.last || 0) - (a.last || 0))[0]; return c ? c.nick : null; };   // naposledy hraný lokálny profil
+let loginOfflineNick = null;   // lokálny profil, s ktorým sa dá hrať offline, keď je prihlasovací server nedostupný
+function renderLogin() {
+  $('loginMsg').textContent = loginError || '';
+  const ob = $('offlineLoginBtn'), p = loginOfflineNick ? getProfile(loginOfflineNick) : null;
+  ob.style.display = p ? '' : 'none';
+  if (p) ob.textContent = '📴 Hrať offline ako ' + p.nick + ' (LV ' + (p.level || 1) + ')';
+}
+$('offlineLoginBtn').addEventListener('click', () => {
+  const p = loginOfflineNick ? getProfile(loginOfflineNick) : null; if (!p) return;
+  cloudUser = null; loginOfflineNick = null; loginError = '';
+  setup.players[0].nick = p.nick; setup.players[0].name = p.nick; if (isColor(p.color)) setup.players[0].color = p.color;
+  saveSetup(); refreshStoryProgressSource(); enterHome();
+  setTimeout(() => banner('📴 Offline režim: postup sa ukladá v telefóne a po prihlásení sa zosynchronizuje s cloudom', 5000), 600);
+});
 function enterHome() {
   hide('login'); refreshContinue(); renderHome(); show('home');
   maybeShowTutorial(); processPendingFriendInvite();
@@ -4055,17 +4081,18 @@ function renderHomeWeekly(prof) {
     '<div class="dcBar"><div class="dcFill" style="width:' + pct + '%"></div></div>';
 }
 $('googleLoginBtn').addEventListener('click', async () => {
-  if (!sb) { loginError = 'Prihlásenie cez Google momentálne nie je dostupné (skontroluj internetové pripojenie).'; renderLogin(); return; }
+  if (!sb) { loginError = 'Prihlásenie cez Google momentálne nie je dostupné (skontroluj internetové pripojenie).'; loginOfflineNick = pickOfflineProfile(); renderLogin(); return; }
   loginError = 'Pripájam sa na prihlasovací server…'; renderLogin();
   // predtým než prehliadač presmerujeme na server Supabase, over, že je vôbec dostupný - inak by sa zobrazila chyba prehliadača (ERR_NAME_NOT_RESOLVED), z ktorej sa v hre nedá vrátiť
   try {
     const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 6000);
     await fetch(SUPABASE_URL + '/auth/v1/health', { mode: 'no-cors', cache: 'no-store', signal: ctl.signal }); clearTimeout(tm);
   } catch (_) {
-    loginError = 'Prihlasovací server (Supabase) je nedostupný. Skontroluj internet; ak je tvoj projekt na Supabase pozastavený (po dlhšej nečinnosti), treba ho v jeho paneli obnoviť. Medzitým môžeš hrať ako hosť.';
+    loginError = 'Prihlasovací server (Supabase) je nedostupný. Skontroluj internet; ak je tvoj projekt na Supabase pozastavený (po dlhšej nečinnosti), treba ho v jeho paneli obnoviť. Medzitým môžeš hrať offline so svojím uloženým profilom alebo ako hosť.';
+    loginOfflineNick = pickOfflineProfile();
     renderLogin(); return;
   }
-  loginError = ''; renderLogin();
+  loginOfflineNick = null; loginError = ''; renderLogin();
   sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin + window.location.pathname } })
     .then(({ error }) => { if (error) { loginError = 'Prihlásenie zlyhalo: ' + error.message; renderLogin(); } });
 });
