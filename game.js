@@ -3679,8 +3679,13 @@ function syncViewportVars() {
     if (sh > h && sh - h < 160) h = sh;
   }
   document.documentElement.style.setProperty('--app-h', h + 'px');
+  // posun viditeľnej plochy voči rozloženiu (iOS: lišty prehliadača, odrolovaná stránka) - vrstvy menu sa o ňu posunú, nech sedia presne na viditeľnú plochu
+  const ot = vv ? Math.max(0, Math.round(vv.offsetTop)) : 0, ol = vv ? Math.max(0, Math.round(vv.offsetLeft)) : 0;
+  document.documentElement.style.setProperty('--vv-top', ot + 'px'); document.documentElement.style.setProperty('--vv-left', ol + 'px');
 }
 syncViewportVars();
+const unscroll = () => { if (window.scrollY || window.scrollX) window.scrollTo(0, 0); };   // stránka sa nikdy nemá odrolovať (menu aj hra sú fixné vrstvy)
+addEventListener('scroll', unscroll, { passive: true });
 ['resize', 'orientationchange'].forEach(ev => addEventListener(ev, () => { syncViewportVars(); setTimeout(syncViewportVars, 300); }));
 if (window.visualViewport) ['resize', 'scroll'].forEach(ev => window.visualViewport.addEventListener(ev, syncViewportVars));
 const FIT_IDS = ['login', 'home', 'dungeon', 'settings', 'credits'];
@@ -3704,7 +3709,7 @@ function fitMenus() {   // automaticky prispôsobí karty menu oknu: ak sú vyš
     if (h * z + 8 <= avail) ov.scrollTop = 0;   // všetko sa zmestilo - nech nezostane odrolované z minula
     lastZ = z; lastAvail = avail;
   });
-  const diag = ' · ' + vw + '×' + Math.round(window.innerHeight) + '/' + (document.documentElement.style.getPropertyValue('--app-h') || '?').replace('px', '') + (lastZ !== 1 ? ' · ×' + lastZ.toFixed(2) : '');
+  const vv = window.visualViewport, diag = ' · ' + vw + '×' + Math.round(window.innerHeight) + '/' + (document.documentElement.style.getPropertyValue('--app-h') || '?').replace('px', '') + ' · t' + Math.round(vv ? vv.offsetTop : 0) + ' y' + Math.round(window.scrollY || 0) + (lastZ !== 1 ? ' · ×' + lastZ.toFixed(2) : '');
   document.querySelectorAll('.verTag').forEach(el => { el.dataset.diag = diag; });   // rozmery okna v nápise verzie - pomôžu pri ladení na rôznych telefónoch
 }
 let fitT = 0; const fitSoon = () => { clearTimeout(fitT); fitT = setTimeout(fitMenus, 40); };
@@ -4049,8 +4054,17 @@ function renderHomeWeekly(prof) {
   card.innerHTML = '<div>' + wc.icon + ' <b>Týždenná výzva:</b> ' + esc(wc.title) + (done ? ' ✔' : ' (' + Math.min(have, wc.target) + '/' + wc.target + ')') + (done ? '' : ' · +' + wc.xp + ' XP') + '</div>' +
     '<div class="dcBar"><div class="dcFill" style="width:' + pct + '%"></div></div>';
 }
-$('googleLoginBtn').addEventListener('click', () => {
+$('googleLoginBtn').addEventListener('click', async () => {
   if (!sb) { loginError = 'Prihlásenie cez Google momentálne nie je dostupné (skontroluj internetové pripojenie).'; renderLogin(); return; }
+  loginError = 'Pripájam sa na prihlasovací server…'; renderLogin();
+  // predtým než prehliadač presmerujeme na server Supabase, over, že je vôbec dostupný - inak by sa zobrazila chyba prehliadača (ERR_NAME_NOT_RESOLVED), z ktorej sa v hre nedá vrátiť
+  try {
+    const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 6000);
+    await fetch(SUPABASE_URL + '/auth/v1/health', { mode: 'no-cors', cache: 'no-store', signal: ctl.signal }); clearTimeout(tm);
+  } catch (_) {
+    loginError = 'Prihlasovací server (Supabase) je nedostupný. Skontroluj internet; ak je tvoj projekt na Supabase pozastavený (po dlhšej nečinnosti), treba ho v jeho paneli obnoviť. Medzitým môžeš hrať ako hosť.';
+    renderLogin(); return;
+  }
   loginError = ''; renderLogin();
   sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin + window.location.pathname } })
     .then(({ error }) => { if (error) { loginError = 'Prihlásenie zlyhalo: ' + error.message; renderLogin(); } });
